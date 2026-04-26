@@ -174,6 +174,7 @@ st.markdown("""
 # ════════════════════════════════════════════════════════════════
 # AMBIL DATA DARI SESSION STATE
 # ════════════════════════════════════════════════════════════════
+result_data = st.session_state.get("analisis_result", {})
 df_converted = result_data.get("df_converted", pd.DataFrame())
 
 # Pastikan kolom skor ada dan bertipe numerik
