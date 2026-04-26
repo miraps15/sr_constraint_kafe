@@ -1,0 +1,10 @@
+# ============================================================
+# packages.txt — System-level package (apt-get)
+# Letakkan di ROOT folder project
+#
+# Streamlit Cloud menjalankan apt-get install untuk setiap baris
+# sebelum menginstall requirements.txt
+# ============================================================
+
+# Dibutuhkan oleh beberapa library Python (spaCy, torch, numpy)
+build-essential

@@ -1,0 +1,78 @@
+# ============================================================
+# .gitignore — File yang TIDAK boleh masuk ke GitHub
+# Letakkan di ROOT folder project
+# ============================================================
+
+# ── SECRETS — PALING PENTING, jangan pernah di-commit ────────
+.streamlit/secrets.toml
+
+# ── Python cache & compiled files ────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# ── Virtual environment ───────────────────────────────────────
+.env
+venv/
+.venv/
+env/
+ENV/
+
+# ── Model & data besar (tidak perlu di GitHub) ───────────────
+*.pth
+*.pt
+*.h5
+*.pkl
+*.npz
+*.bin
+
+# ── GloVe embeddings (file sangat besar, download runtime) ───
+glove_*.txt
+glove.*.txt
+*.glove
+
+# ── Cache ABSA (dibuat saat runtime di /tmp) ─────────────────
+absa_cache/
+/tmp/absa_cache/
+
+# ── Data lokal / Google Drive path ───────────────────────────
+/content/
+*.xlsx
+*.csv
+# Kecuali jika ada sample data kecil yang memang perlu di-commit
+# !sample_data.csv
+
+# ── Jupyter Notebook checkpoints ─────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── OS generated ─────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ── IDE / Editor ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Log files ────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Streamlit generated ──────────────────────────────────────
+# (secrets.toml sudah di atas, tapi pastikan folder juga)
+# .streamlit/ folder boleh di-commit KECUALI secrets.toml
+# Baris berikut memastikan folder .streamlit tetap masuk
+# tapi secrets.toml tidak
+!.streamlit/
+!.streamlit/config.toml
