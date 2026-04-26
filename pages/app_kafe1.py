@@ -14,7 +14,6 @@
 # ============================================================
 
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import urllib.parse
@@ -362,6 +361,20 @@ div[data-testid="stRadio"] > div > label:has(input:checked) {{
     z-index: 1000 !important; width: auto !important;
 }}
 .fav-btn-wrap div[data-testid="stButton"] button:hover {{ background: #FFE0D4 !important; }}
+/* CSS slideshow inline */
+.slide-section-wrap {{overflow:hidden;}}
+.slide-track-outer {{position:relative;padding:0 0 4px;}}
+.slide-track {{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding:4px 44px 12px;scrollbar-width:thin;scrollbar-color:rgba(200,80,42,.3) transparent;}}
+.slide-track::-webkit-scrollbar {{height:5px;}}
+.slide-track::-webkit-scrollbar-track {{background:transparent;}}
+.slide-track::-webkit-scrollbar-thumb {{background:rgba(200,80,42,.3);border-radius:10px;}}
+.slide-btn {{position:absolute;top:50%;transform:translateY(-60%);width:36px;height:36px;border-radius:50%;background:#fff;border:1.5px solid #E8DDD5;box-shadow:0 2px 8px rgba(0,0,0,.12);cursor:pointer;font-size:1rem;font-weight:700;color:#C8502A;display:flex;align-items:center;justify-content:center;z-index:10;line-height:1;}}
+.slide-btn-left {{left:4px;}}
+.slide-btn-right {{right:4px;}}
+.slide-card {{flex-shrink:0;scroll-snap-align:start;}}
+.slide-card-inner {{background:#fff;border-radius:14px;border:1.5px solid #E8DDD5;overflow:hidden;box-shadow:0 2px 10px rgba(28,25,23,.07);transition:transform .2s,box-shadow .2s;}}
+.slide-card-inner:hover {{transform:translateY(-4px);box-shadow:0 8px 24px rgba(28,25,23,.13);}}
+.slide-counter {{text-align:center;font-size:.72rem;color:#aaa;font-weight:500;margin-top:2px;}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -725,7 +738,7 @@ def _build_one_card_html_1(row: pd.Series, rank: int, cat: str,
             f'align-items:center;justify-content:center;font-size:2rem;color:#c8a898;'
             f'flex-direction:column;">&#9749;<small style="font-size:.55rem;text-transform:uppercase;">No Photo</small></div>'
         )
-    top5_list = top5_lookup.get((kid, cat), [])
+    top5_list = top5_lookup.get(f"{kid}|{cat}", [])
     top5_html = ""
     if top5_list:
         _dot_colors = ["#C8502A","#B8730A","#1A6EB0","#1A7A3C","#7C3AED"]
@@ -822,7 +835,7 @@ def _build_category_html_1(
     )
 
     return f"""
-<div style="background:{bg_sec};padding:36px 48px 14px;" id="section-{uid}">
+<div class="slide-section-wrap" style="background:{bg_sec};padding:36px 48px 14px;" id="section-{uid}">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
     <div style="font-family:'Fraunces',serif;font-size:1.25rem;font-weight:700;color:#1C1917;display:flex;align-items:center;gap:10px;">
       {icon}&nbsp;Best&nbsp;<span style="padding:3px 12px;border-radius:50px;font-size:.66rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:{accentbg};color:{accentfg};">{cat.upper()}</span>
@@ -830,16 +843,15 @@ def _build_category_html_1(
     <div style="font-size:.75rem;color:#bbb;">{n_total} kafe &middot; geser untuk lihat semua</div>
   </div>
   <div style="font-size:.84rem;color:#78716C;margin-bottom:14px;">Diurutkan berdasarkan skor sentimen tertinggi ke terendah kategori aspek <b>{cat.lower()}</b></div>
-  <div style="position:relative;padding:0 0 4px;">
-    <button onclick="slide_{uid}(-1)" style="position:absolute;top:50%;left:4px;transform:translateY(-60%);width:36px;height:36px;border-radius:50%;background:#fff;border:1.5px solid #E8DDD5;box-shadow:0 2px 8px rgba(0,0,0,.12);cursor:pointer;font-size:1rem;font-weight:700;color:#C8502A;display:flex;align-items:center;justify-content:center;z-index:10;line-height:1;">&#8249;</button>
-    <div id="track_{uid}" style="display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding:4px 44px 12px;scrollbar-width:thin;scrollbar-color:rgba(200,80,42,.3) transparent;">
+  <div class="slide-track-outer">
+    <button class="slide-btn slide-btn-left" onclick="slideTrack('{uid}',-1)">&#8249;</button>
+    <div id="track_{uid}" class="slide-track">
       {all_cards_html}
     </div>
-    <button onclick="slide_{uid}(1)" style="position:absolute;top:50%;right:4px;transform:translateY(-60%);width:36px;height:36px;border-radius:50%;background:#fff;border:1.5px solid #E8DDD5;box-shadow:0 2px 8px rgba(0,0,0,.12);cursor:pointer;font-size:1rem;font-weight:700;color:#C8502A;display:flex;align-items:center;justify-content:center;z-index:10;line-height:1;">&#8250;</button>
+    <button class="slide-btn slide-btn-right" onclick="slideTrack('{uid}',1)">&#8250;</button>
   </div>
-  <div id="counter_{uid}" style="text-align:center;font-size:.72rem;color:#aaa;font-weight:500;margin-top:2px;">1 / {n_total}</div>
-</div>
-<script>
+  <div id="counter_{uid}" class="slide-counter">1 / {n_total}</div>
+</div>"""
 (function(){{
   var track=document.getElementById('track_{uid}');
   var cnt=document.getElementById('counter_{uid}');
@@ -865,7 +877,7 @@ def build_all_slides_html_1(
     identifier: str,
     is_google: bool,
     card_w: int, img_h: int, top5_h: int, body_h: int,
-) -> tuple:
+) -> str:
     best_df        = pd.read_json(best_df_json, orient="records")
     top5_lookup    = json.loads(top5_json)
     unique_cats    = json.loads(cats_json)
@@ -875,9 +887,6 @@ def build_all_slides_html_1(
 
     if best_df.empty:
         return "", 0
-
-    card_h   = img_h + body_h + top5_h + 38 + 32
-    iframe_h = card_h + 80
 
     body_parts = []
     for idx_cat, cat in enumerate(unique_cats):
@@ -891,9 +900,11 @@ def build_all_slides_html_1(
 
         kids_in_cat = set(cat_ranked["kafe_id"].astype(str).tolist())
         top5_subset = {
-            f"{k}|{c}": v
-            for (k, c), v in top5_lookup.items()
-            if k in kids_in_cat and c == cat
+            key: v
+            for key, v in top5_lookup.items()
+            if isinstance(key, str) and "|" in key
+            and key.split("|", 1)[0] in kids_in_cat
+            and key.split("|", 1)[1] == cat
         }
 
         section_html = _build_category_html_1(
@@ -917,24 +928,35 @@ def build_all_slides_html_1(
 
     all_body = '<hr style="border:none;border-top:1px solid #E8DDD5;margin:0;">'.join(body_parts)
 
-    full_html = f"""<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-<style>
-*{{box-sizing:border-box;margin:0;padding:0;}}
-body{{font-family:'Plus Jakarta Sans',sans-serif;background:#fff;overflow-x:hidden;}}
-div[id^="track_"]{{scrollbar-width:thin;scrollbar-color:rgba(200,80,42,.3) transparent;}}
-div[id^="track_"]::-webkit-scrollbar{{height:5px;}}
-div[id^="track_"]::-webkit-scrollbar-track{{background:transparent;}}
-div[id^="track_"]::-webkit-scrollbar-thumb{{background:rgba(200,80,42,.3);border-radius:10px;}}
-</style>
-</head><body>
-{all_body}
-</body></html>"""
+    card_total_w = card_w + 16
+    script = f"""
+<script>
+(function(){{
+  var cardW = {card_total_w};
+  var cursors = {{}};
+  window.slideTrack = function(uid, d) {{
+    var track = document.getElementById('track_' + uid);
+    var cnt   = document.getElementById('counter_' + uid);
+    if (!track) return;
+    var total = track.children.length;
+    if (!cursors[uid]) cursors[uid] = 0;
+    cursors[uid] = Math.min(Math.max(cursors[uid] + d, 0), total - 1);
+    track.scrollTo({{left: cursors[uid] * cardW, behavior: 'smooth'}});
+    if (cnt) cnt.textContent = (cursors[uid] + 1) + ' / ' + total;
+  }};
+  document.addEventListener('scroll', function() {{
+    document.querySelectorAll('[id^="track_"]').forEach(function(track) {{
+      var uid = track.id.replace('track_', '');
+      var cnt = document.getElementById('counter_' + uid);
+      var cur = Math.min(Math.max(Math.round(track.scrollLeft / cardW), 0), track.children.length - 1);
+      cursors[uid] = cur;
+      if (cnt) cnt.textContent = (cur + 1) + ' / ' + track.children.length;
+    }});
+  }}, {{passive: true}});
+}})();
+</script>"""
 
-    total_h = iframe_h * len(body_parts) + 20
-    return full_html, total_h
+    return all_body + script
 
 
 _any_popup_active_1 = (
@@ -965,7 +987,7 @@ if not best_df.empty and not _any_popup_active_1:
     if _slides_key_1 not in st.session_state:
         _top5_serializable = {f"{k}|{c}": v for (k, c), v in _top5_lookup.items()}
 
-        _all_html_1, _total_h_1 = build_all_slides_html_1(
+        _all_html_1 = build_all_slides_html_1(
             best_df_json        = best_df.to_json(orient="records"),
             top5_json           = json.dumps(_top5_serializable),
             jml_review_json     = json.dumps(_jml_review_map),
@@ -982,14 +1004,12 @@ if not best_df.empty and not _any_popup_active_1:
             body_h              = BODY_H,
         )
         st.session_state[_slides_key_1]         = _all_html_1
-        st.session_state[_slides_key_1 + "_h"]  = _total_h_1
 
     _all_html_1 = st.session_state[_slides_key_1]
-    _total_h_1  = st.session_state.get(_slides_key_1 + "_h", 2000)
 
-    # [F1] SATU components.html untuk semua kategori
+    # BARU:
     if _all_html_1:
-        components.html(_all_html_1, height=_total_h_1, scrolling=True)
+        st.markdown(_all_html_1, unsafe_allow_html=True)
 
 elif _any_popup_active_1:
     st.markdown('<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Memproses...</div>', unsafe_allow_html=True)
