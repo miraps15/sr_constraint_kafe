@@ -55,6 +55,7 @@ import string
 import tempfile
 import requests
 import pandas as pd
+import re
 from collections import defaultdict
 import streamlit as st
 
@@ -169,7 +170,6 @@ def _download_gdrive_file(file_id: str, dest_path: str, desc: str = "", name: st
                         break
 
                 # Cari pola confirm= di HTML
-                import re
                 # Pola baru Google Drive (2024)
                 match = re.search(
                     r'confirm=([0-9A-Za-z_\-]+)', chunk.decode("utf-8", errors="ignore")
