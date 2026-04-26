@@ -184,11 +184,13 @@ if "precompute_done_1" not in st.session_state:
     with st.spinner("☕ Memuat data kafe..."):
         best_df      = get_best_per_category(df)
         _top5_lookup = precompute_all_top5(df)
-    st.session_state["precompute_done_1"] = True
+    st.session_state["precompute_done_1"]  = True
+    st.session_state["_cached_best_df_1"]  = best_df
+    st.session_state["_cached_top5_1"]     = _top5_lookup
 else:
-    best_df      = get_best_per_category(df)
-    _top5_lookup = precompute_all_top5(df)
-
+    best_df      = st.session_state["_cached_best_df_1"]
+    _top5_lookup = st.session_state["_cached_top5_1"]
+    
 _jml_review_map     = get_jumlah_review_per_kafe(df)
 _reviewer_aktif_map = get_reviewer_aktif_per_kafe(df)
 
@@ -890,6 +892,11 @@ def render_best_section(cat: str, ranked_df: pd.DataFrame, top5_lookup: dict,
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
+_any_popup_active_1 = (
+    st.session_state.get("show_no_kafe_popup", False) or
+    st.session_state.get("show_lokasi_only_popup", False) or
+    st.session_state.get("analisis_processing", False)
+)
 
 # ════════════════════════════════════════════════════════════════
 # RENDER BEST KAFE
@@ -907,16 +914,16 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-if not best_df.empty:
+if not best_df.empty and not _any_popup_active_1:
     for cat in unique_cats:
         cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
         render_best_section(
             cat, cat_ranked, _top5_lookup,
             _jml_review_map, _reviewer_aktif_map
         )
-else:
-    st.markdown('<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Data sedang disiapkan, refresh halaman sebentar lagi.</div>', unsafe_allow_html=True)
-
+elif _any_popup_active_1:
+    st.markdown('<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Memproses...</div>', unsafe_allow_html=True)
+    
 # ════════════════════════════════════════════════════════════════
 # ANALISIS SENTIMEN
 # ════════════════════════════════════════════════════════════════
@@ -1102,21 +1109,36 @@ with st.container():
             else:
                 n_uniq = min(len(set(r.strip() for r in analisis_reviews if r.strip())), MAX_REVIEW_BATCH)
                 st.markdown(f'<span style="font-size:.84rem;color:#78716C;">← {n_uniq} review unik akan dianalisis</span>', unsafe_allow_html=True)
-
+        # Tambahkan sebelum if btn_analisis:
+        if analisis_reviews:
+            st.session_state["_pending_reviews"] = analisis_reviews
+        if analisis_nama.strip():
+            st.session_state["_pending_nama"] = analisis_nama.strip()
+    
         if btn_analisis and analisis_nama.strip() and analisis_reviews and _engine_available:
             st.session_state["analisis_processing"] = True
             st.session_state["analisis_error"]      = ""
+            st.session_state["_nav_to_analisis"]    = True
+            st.rerun()
+        
+        # Pisahkan eksekusi berat dari render loop utama
+        if st.session_state.get("_nav_to_analisis", False) and st.session_state.get("analisis_processing", False):
+            st.session_state.pop("_nav_to_analisis", None)
             try:
-                result = run_analysis_optimized(analisis_reviews, analisis_nama.strip())
-                st.session_state["analisis_result"]      = result
-                st.session_state["analisis_processing"]  = False
+                result = run_analysis_optimized(
+                    st.session_state.get("_pending_reviews", []),
+                    st.session_state.get("_pending_nama", "")
+                )
+                st.session_state["analisis_result"]     = result
+                st.session_state["analisis_processing"] = False
                 st.switch_page("pages/hasilanalisis.py")
             except Exception as e_proc:
                 st.session_state["analisis_processing"] = False
                 err_msg = str(e_proc)
                 if "No module named" in err_msg:
                     err_msg = "Modul analisis tidak ditemukan."
-                st.session_state["analisis_error"] = err_msg[:400]; st.rerun()
+                st.session_state["analisis_error"] = err_msg[:400]
+                st.rerun()
 
 # ════════════════════════════════════════════════════════════════
 # FOOTER
