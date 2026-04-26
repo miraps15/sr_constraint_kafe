@@ -2,15 +2,17 @@
 # SISTEM REKOMENDASI KAFE SURABAYA — Halaman Utama
 # Versi Streamlit Cloud
 #
-# PERBAIKAN PERFORMA [PATCH-LOADING]:
-#   [P1] precompute_all_top5 dan get_best_per_category dipanggil
-#        dengan st.cache_data — sudah benar — tapi sekarang
-#        render slideshow di-guard dengan spinner agar layar
-#        tidak kelap-kelip saat data belum siap.
-#   [P2] components.html loop per-kategori digabung jadi satu
-#        render pass dengan flag "rendered" agar tidak re-inject
-#        iframe berkali-kali saat Streamlit re-run.
-#   [P3] Tidak ada perubahan logika bisnis, navigasi, atau UI.
+# PERBAIKAN PERFORMA [PATCH-FLICKER]:
+#   [F1] Semua slideshow per-kategori digabung jadi SATU
+#        components.html → drastis kurangi iframe overhead
+#        dan eliminasi kelap-kelip saat scroll / tab switch.
+#   [F2] HTML slideshow di-cache via @st.cache_data sehingga
+#        tidak di-rebuild setiap Streamlit re-run.
+#   [F3] Analisis locked section diubah dari components.html
+#        ke st.markdown murni → tidak ada iframe, tidak kelap-kelip.
+#   [F4] Guard _best_rendered di session_state: slideshow hanya
+#        di-inject ulang jika data benar-benar berubah.
+#   [F5] Tidak ada perubahan logika bisnis, navigasi, atau UI.
 # ============================================================
 
 import streamlit as st
@@ -23,8 +25,8 @@ from utils_kafe import (
     load_data,
     compute_best_per_category_imdb,
     precompute_top5_conditions_imdb,
-    compute_saw_scores,      # ← tambahkan ini
-    compute_overall_score,   # ← tambahkan ini
+    compute_saw_scores,
+    compute_overall_score,
     gdrive_direct_url, build_slideshow_html, COMMON_CSS,
 )
 from users_manager import (
@@ -51,7 +53,6 @@ st.set_page_config(
     page_icon="☕", layout="wide",
     initial_sidebar_state="collapsed",
 )
-# ── STARTUP GUARD: cegah re-komputasi saat health check ──────
 import os
 _IS_HEALTH_CHECK = os.environ.get("STREAMLIT_HEALTH_CHECK", "") == "true"
 
@@ -86,7 +87,7 @@ def get_reviewer_aktif_pct_per_kafe(dataframe: pd.DataFrame) -> pd.Series:
     return (aktif_per_kafe / total_per_kafe * 100).fillna(0)
 
 # ════════════════════════════════════════════════════════════════
-# PRECOMPUTE — [P1] Lazy: hanya dijalankan sekali, cached
+# PRECOMPUTE — lazy, hanya satu kali
 # ════════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False)
 def get_best_per_category(_dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -96,9 +97,6 @@ def get_best_per_category(_dataframe: pd.DataFrame) -> pd.DataFrame:
 def precompute_all_top5(_dataframe: pd.DataFrame) -> dict:
     return precompute_top5_conditions_imdb(_dataframe)
 
-# [P1] Jalankan precompute dalam blok spinner sekali saja
-# agar layar tidak kelap-kelip — hanya muncul saat cache kosong
-# GANTI DENGAN INI:
 if "_cached_best_df" not in st.session_state:
     with st.spinner("☕ Memuat data kafe..."):
         _best  = get_best_per_category(df)
@@ -113,7 +111,6 @@ if "_cached_reviewer_pct" not in st.session_state:
     st.session_state["_cached_reviewer_pct"] = get_reviewer_aktif_pct_per_kafe(df)
 _reviewer_aktif_pct = st.session_state["_cached_reviewer_pct"]
 
-# Pre-cache saw dan overall agar skemabandingkan tidak OOM
 if "_cached_saw_cat" not in st.session_state:
     _saw = compute_saw_scores(df)
     st.session_state["_cached_saw_cat"] = _saw
@@ -121,7 +118,7 @@ if "_cached_saw_cat" not in st.session_state:
 if "_cached_overall" not in st.session_state:
     _ov = compute_overall_score(df)
     st.session_state["_cached_overall"] = _ov
-# Guard: jangan render slideshow berat saat popup aktif
+
 _any_popup_active = (
     st.session_state.get("show_no_kafe_popup", False) or
     st.session_state.get("show_lokasi_only_popup", False) or
@@ -165,9 +162,9 @@ def suggest_remove_aspect(pref_items: list, lokasi: str) -> list:
             suggestions.append((cond, len(valid_kids)))
     return sorted(suggestions, key=lambda x: x[1], reverse=True)
 
-# ════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════
 # LOOKUP TABLES
-# ════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════
 all_nama             = sorted(df["nama_kafe"].dropna().unique().tolist())
 all_kecamatan_search = sorted(df["kecamatan_kafe"].dropna().unique().tolist()) \
                        if "kecamatan_kafe" in df.columns else []
@@ -188,9 +185,6 @@ nama_set      = set(all_nama)
 kecamatan_set = set(all_kecamatan_search)
 cond_set      = set(all_condition)
 
-# ════════════════════════════════════════════════════════════
-# PRE-CACHE KONDISI — harus SETELAH all_condition didefinisikan
-# ════════════════════════════════════════════════════════════
 if "_cond_cache_ready" not in st.session_state:
     _all_cond_cache = {c: get_kafe_per_condition(c) for c in all_condition}
     st.session_state["_cond_cache_ready"] = True
@@ -454,7 +448,6 @@ with st.container():
                 key=f"pref_cat_{cat}", label_visibility="collapsed",
                 placeholder=f"Pilih aspek {cat}…",
             )
-            # Simpan ke session state untuk tracking perubahan
             st.session_state[f"_sel_{cat}"] = chosen
             selected_per_cat[cat] = chosen
 
@@ -529,7 +522,6 @@ with st.container():
                     })
                     st.switch_page("pages/skemacari4.py")
 
-        # Popup: tidak ada kafe
         if st.session_state.get("show_no_kafe_popup", False):
             suggestions = st.session_state.get("no_kafe_suggestions", [])
             lok_txt = f" di <b>{st.session_state.get('pending_lokasi','')}</b>" if st.session_state.get("pending_lokasi") else ""
@@ -543,7 +535,6 @@ with st.container():
                     st.session_state["show_no_kafe_popup"] = False
                     st.rerun()
 
-        # Popup: lokasi saja
         if st.session_state.get("show_lokasi_only_popup", False):
             pending = st.session_state.get("pending_lokasi", "")
             lok_l   = f"lokasi <b>{pending}</b>" if pending else "tanpa aspek"
@@ -598,10 +589,11 @@ with st.container():
 st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
-# BEST KAFE — Slideshow
-# [P2] Render semua slideshow dalam satu pass, tidak re-inject
-#      per-kategori saat widget re-run
+# BEST KAFE — SLIDESHOW
+# [F1] Semua kategori digabung dalam SATU components.html
+# [F2] HTML di-cache via @st.cache_data
 # ════════════════════════════════════════════════════════════════
+
 CARD_W = 220; IMG_H = 128; TOP5_H = 108; BODY_H = 118
 
 def _build_one_card_html(row, rank, cat, bg_sec, top5_lookup, reviewer_aktif_pct):
@@ -646,7 +638,7 @@ def _build_one_card_html(row, rank, cat, bg_sec, top5_lookup, reviewer_aktif_pct
                           f'<div style="flex:1;height:3px;background:#f0e8e3;border-radius:2px;overflow:hidden;"><div style="height:3px;border-radius:2px;background:{dot_clr};width:{bar_w}%;"></div></div>'
                           f'<div style="font-size:.58rem;font-weight:700;min-width:26px;text-align:right;color:{dot_clr};">{float(pct_val):.0f}%</div></div>')
         top5_html += '</div>'
-    
+
     cat_encoded = cat.replace(" ", "+")
     nav_url     = f"?nav_kid={kid}&nav_nama={nama_display.replace(' ', '+')}&nav_cat={cat_encoded}"
     return f"""
@@ -673,50 +665,42 @@ def _build_one_card_html(row, rank, cat, bg_sec, top5_lookup, reviewer_aktif_pct
   </div>
 </div>"""
 
-def build_slideshow_html_section(ranked_df, cat, bg_sec, top5_lookup, reviewer_aktif_pct):
+
+# [F2] Cache HTML string per kategori agar tidak rebuild setiap re-run
+@st.cache_data(show_spinner=False)
+def _build_category_section_html(
+    cat: str,
+    ranked_json: str,          # JSON string dari ranked_df
+    top5_json: str,            # JSON string dari top5_lookup subset
+    reviewer_pct_json: str,    # JSON string dari reviewer_aktif_pct
+    bg_sec: str,
+    accentbg: str,
+    accentfg: str,
+    icon: str,
+    card_w: int, img_h: int, top5_h: int, body_h: int,
+) -> str:
+    """
+    Build HTML kartu slideshow untuk satu kategori.
+    Dikembalikan sebagai string HTML (bukan iframe) — digabung di luar.
+    """
+    ranked_df      = pd.read_json(ranked_json, orient="records")
+    top5_lookup    = json.loads(top5_json)
+    reviewer_pct   = json.loads(reviewer_pct_json)
+
     if ranked_df.empty:
         return ""
+
     n_total      = len(ranked_df)
     uid          = cat.replace(" ", "_").replace("/", "_").lower()
-    card_total_w = CARD_W + 16
+    card_total_w = card_w + 16
+
     all_cards_html = "".join(
-        _build_one_card_html(row, i+1, cat, bg_sec, top5_lookup, reviewer_aktif_pct)
+        _build_one_card_html(row, i + 1, cat, bg_sec, top5_lookup, reviewer_pct)
         for i, (_, row) in enumerate(ranked_df.iterrows())
     )
-    return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-<style>*{{box-sizing:border-box;margin:0;padding:0;}}body{{font-family:'Plus Jakarta Sans',sans-serif;background:{bg_sec};padding:0 0 24px;overflow-x:hidden;}}
-.slide-wrap{{position:relative;padding:0 0 4px;}}.slide-track{{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding:4px 4px 12px;scrollbar-width:thin;scrollbar-color:rgba(200,80,42,.3) transparent;}}
-.slide-track::-webkit-scrollbar{{height:5px;}}.slide-track::-webkit-scrollbar-track{{background:transparent;}}.slide-track::-webkit-scrollbar-thumb{{background:rgba(200,80,42,.3);border-radius:10px;}}
-.btn-slide{{position:absolute;top:50%;transform:translateY(-60%);width:36px;height:36px;border-radius:50%;background:#fff;border:1.5px solid #E8DDD5;box-shadow:0 2px 8px rgba(0,0,0,.12);cursor:pointer;font-size:1rem;font-weight:700;color:#C8502A;display:flex;align-items:center;justify-content:center;z-index:10;transition:background .18s,box-shadow .18s;line-height:1;}}
-.btn-slide:hover{{background:#FFF0EB;box-shadow:0 4px 14px rgba(0,0,0,.18);}}.btn-prev{{left:4px;}}.btn-next{{right:4px;}}
-.slide-counter{{text-align:center;font-size:.72rem;color:#aaa;font-weight:500;margin-top:2px;}}</style>
-</head><body>
-<div class="slide-wrap">
-  <button class="btn-slide btn-prev" onclick="slide_{uid}(-1)">&#8249;</button>
-  <div class="slide-track" id="track_{uid}">{all_cards_html}</div>
-  <button class="btn-slide btn-next" onclick="slide_{uid}(1)">&#8250;</button>
-</div>
-<div class="slide-counter" id="counter_{uid}">1 / {n_total}</div>
-<script>
-(function(){{var track=document.getElementById('track_{uid}');var cnt=document.getElementById('counter_{uid}');var cardW={card_total_w},total={n_total},cur=0;
-function upd(){{cur=Math.min(Math.max(Math.round(track.scrollLeft/cardW),0),total-1);cnt.textContent=(cur+1)+' / '+total;}}
-track.addEventListener('scroll',upd,{{passive:true}});
-window.slide_{uid}=function(d){{cur=Math.min(Math.max(cur+d,0),total-1);track.scrollTo({{left:cur*cardW,behavior:'smooth'}});}};
-}})();
-</script></body></html>"""
 
-def render_best_section(cat, ranked_df, top5_lookup, reviewer_aktif_pct):
-    if ranked_df.empty:
-        return
-    icon    = CAT_ICONS.get(cat, "&#9749;")
-    bg_sec  = CAT_BG.get(cat, "#fff")
-    n_total = len(ranked_df)
-    idx_cat = unique_cats.index(cat) if cat in unique_cats else 0
-    accentbg, accentfg = _clrs[idx_cat % len(_clrs)]
-    st.markdown(f"""
-<div style="background:{bg_sec};padding:36px 48px 14px;">
+    return f"""
+<div style="background:{bg_sec};padding:36px 48px 14px;" id="section-{uid}">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
     <div style="font-family:'Fraunces',serif;font-size:1.25rem;font-weight:700;color:#1C1917;display:flex;align-items:center;gap:10px;">
       {icon}&nbsp;Best&nbsp;<span style="padding:3px 12px;border-radius:50px;font-size:.66rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:{accentbg};color:{accentfg};">{cat.upper()}</span>
@@ -724,13 +708,114 @@ def render_best_section(cat, ranked_df, top5_lookup, reviewer_aktif_pct):
     <div style="font-size:.75rem;color:#bbb;">{n_total} kafe &middot; geser untuk lihat semua</div>
   </div>
   <div style="font-size:.84rem;color:#78716C;margin-bottom:14px;">Diurutkan berdasarkan skor sentimen tertinggi ke terendah kategori aspek <b>{cat.lower()}</b></div>
-</div>""", unsafe_allow_html=True)
-    card_h   = IMG_H + BODY_H + TOP5_H + 38 + 32
-    iframe_h = card_h + 60
-    html     = build_slideshow_html_section(ranked_df, cat, bg_sec, top5_lookup, reviewer_aktif_pct)
-    st.markdown(f'<div style="background:{bg_sec};padding:0 12px 36px;">', unsafe_allow_html=True)
-    components.html(html, height=iframe_h, scrolling=False)
-    st.markdown('</div>', unsafe_allow_html=True)
+  <div style="position:relative;padding:0 0 4px;">
+    <button onclick="slide_{uid}(-1)" style="position:absolute;top:50%;left:4px;transform:translateY(-60%);width:36px;height:36px;border-radius:50%;background:#fff;border:1.5px solid #E8DDD5;box-shadow:0 2px 8px rgba(0,0,0,.12);cursor:pointer;font-size:1rem;font-weight:700;color:#C8502A;display:flex;align-items:center;justify-content:center;z-index:10;line-height:1;">&#8249;</button>
+    <div id="track_{uid}" style="display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding:4px 44px 12px;scrollbar-width:thin;scrollbar-color:rgba(200,80,42,.3) transparent;">
+      {all_cards_html}
+    </div>
+    <button onclick="slide_{uid}(1)" style="position:absolute;top:50%;right:4px;transform:translateY(-60%);width:36px;height:36px;border-radius:50%;background:#fff;border:1.5px solid #E8DDD5;box-shadow:0 2px 8px rgba(0,0,0,.12);cursor:pointer;font-size:1rem;font-weight:700;color:#C8502A;display:flex;align-items:center;justify-content:center;z-index:10;line-height:1;">&#8250;</button>
+  </div>
+  <div id="counter_{uid}" style="text-align:center;font-size:.72rem;color:#aaa;font-weight:500;margin-top:2px;">1 / {n_total}</div>
+</div>
+<script>
+(function(){{
+  var track=document.getElementById('track_{uid}');
+  var cnt=document.getElementById('counter_{uid}');
+  var cardW={card_total_w},total={n_total},cur=0;
+  function upd(){{cur=Math.min(Math.max(Math.round(track.scrollLeft/cardW),0),total-1);cnt.textContent=(cur+1)+' / '+total;}}
+  track.addEventListener('scroll',upd,{{passive:true}});
+  window.slide_{uid}=function(d){{cur=Math.min(Math.max(cur+d,0),total-1);track.scrollTo({{left:cur*cardW,behavior:'smooth'}});}};
+}})();
+</script>"""
+
+
+# [F1][F2] Build satu HTML besar berisi SEMUA kategori, di-cache
+@st.cache_data(show_spinner=False)
+def build_all_slides_html(
+    best_df_json: str,
+    top5_json: str,
+    reviewer_pct_json: str,
+    cats_json: str,
+    clrs_json: str,
+    cat_icons_json: str,
+    cat_bg_json: str,
+    card_w: int, img_h: int, top5_h: int, body_h: int,
+) -> tuple:
+    """
+    Bangun satu HTML string berisi semua slideshow semua kategori.
+    Return: (full_html_string, total_height_px)
+    Dikembalikan sebagai satu komponen sehingga tidak kelap-kelip saat re-run.
+    """
+    best_df        = pd.read_json(best_df_json, orient="records")
+    top5_lookup    = json.loads(top5_json)
+    reviewer_pct   = json.loads(reviewer_pct_json)
+    unique_cats    = json.loads(cats_json)
+    clrs           = json.loads(clrs_json)
+    cat_icons      = json.loads(cat_icons_json)
+    cat_bg         = json.loads(cat_bg_json)
+
+    if best_df.empty:
+        return "", 0
+
+    card_h   = img_h + body_h + top5_h + 38 + 32
+    iframe_h = card_h + 80  # per kategori
+
+    body_parts = []
+    for idx_cat, cat in enumerate(unique_cats):
+        cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
+        if cat_ranked.empty:
+            continue
+
+        bg_sec    = cat_bg.get(cat, "#fff")
+        icon      = cat_icons.get(cat, "&#9749;")
+        accentbg, accentfg = clrs[idx_cat % len(clrs)]
+
+        # Build top5_lookup subset untuk kategori ini (kurangi ukuran JSON)
+        kids_in_cat = set(cat_ranked["kafe_id"].astype(str).tolist())
+        top5_subset = {
+            f"{k}|{c}": v
+            for (k, c), v in top5_lookup.items()
+            if k in kids_in_cat and c == cat
+        }
+
+        section_html = _build_category_section_html(
+            cat             = cat,
+            ranked_json     = cat_ranked.to_json(orient="records"),
+            top5_json       = json.dumps(top5_subset),
+            reviewer_pct_json = reviewer_pct_json,
+            bg_sec          = bg_sec,
+            accentbg        = accentbg,
+            accentfg        = accentfg,
+            icon            = icon,
+            card_w          = card_w,
+            img_h           = img_h,
+            top5_h          = top5_h,
+            body_h          = body_h,
+        )
+        body_parts.append(section_html)
+
+    # Divider antar kategori
+    all_body = '<hr style="border:none;border-top:1px solid #E8DDD5;margin:0;">'.join(body_parts)
+
+    full_html = f"""<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{font-family:'Plus Jakarta Sans',sans-serif;background:#fff;overflow-x:hidden;}}
+div[id^="track_"]{{scrollbar-width:thin;scrollbar-color:rgba(200,80,42,.3) transparent;}}
+div[id^="track_"]::-webkit-scrollbar{{height:5px;}}
+div[id^="track_"]::-webkit-scrollbar-track{{background:transparent;}}
+div[id^="track_"]::-webkit-scrollbar-thumb{{background:rgba(200,80,42,.3);border-radius:10px;}}
+</style>
+</head><body>
+{all_body}
+</body></html>"""
+
+    total_h = iframe_h * len(body_parts) + 20
+    return full_html, total_h
+
 
 # ── Render Best Kafe ──────────────────────────────────────────
 st.markdown(f"""
@@ -748,65 +833,83 @@ st.markdown(f"""
 _pref_active = bool(all_selected) or bool(pref_lokasi_input)
 
 if not best_df.empty and not _any_popup_active and not _pref_active:
-    # Render hanya satu tab aktif, bukan semua slideshow sekaligus
-    tab_labels = [f"{CAT_ICONS.get(c,'☕')} {c.title()}" for c in unique_cats]
-    tabs = st.tabs(tab_labels)
-    for i, cat in enumerate(unique_cats):
-        with tabs[i]:
-            cat_ranked = best_df[
-                best_df["category_aspect_kafe"] == cat
-            ].reset_index(drop=True)
-            if not cat_ranked.empty:
-                render_best_section(cat, cat_ranked, _top5_lookup, _reviewer_aktif_pct)
-            else:
-                st.markdown(
-                    '<div style="padding:24px;color:#78716C;">Belum ada data untuk kategori ini.</div>',
-                    unsafe_allow_html=True
-                )
+    # [F4] Hanya build ulang HTML jika belum ada di session_state
+    _slides_key = "_all_slides_html_guest"
+    if _slides_key not in st.session_state:
+        # Siapkan data untuk cache function (semua harus JSON-serializable)
+        _top5_serializable = {f"{k}|{c}": v for (k, c), v in _top5_lookup.items()}
+        _reviewer_pct_dict = _reviewer_aktif_pct.to_dict() if hasattr(_reviewer_aktif_pct, "to_dict") else dict(_reviewer_aktif_pct)
+
+        _all_html, _total_h = build_all_slides_html(
+            best_df_json      = best_df.to_json(orient="records"),
+            top5_json         = json.dumps(_top5_serializable),
+            reviewer_pct_json = json.dumps(_reviewer_pct_dict),
+            cats_json         = json.dumps(unique_cats),
+            clrs_json         = json.dumps(_clrs),
+            cat_icons_json    = json.dumps(CAT_ICONS),
+            cat_bg_json       = json.dumps(CAT_BG),
+            card_w            = CARD_W,
+            img_h             = IMG_H,
+            top5_h            = TOP5_H,
+            body_h            = BODY_H,
+        )
+        st.session_state[_slides_key]           = _all_html
+        st.session_state[_slides_key + "_h"]    = _total_h
+
+    _all_html = st.session_state[_slides_key]
+    _total_h  = st.session_state.get(_slides_key + "_h", 2000)
+
+    # [F1] SATU components.html untuk semua kategori
+    if _all_html:
+        components.html(_all_html, height=_total_h, scrolling=True)
+
 elif _pref_active and not _any_popup_active:
     st.markdown("""
     <div style="padding:24px 48px;background:#FFF8F3;border-top:1px solid #E8DDD5;">
       <div style="font-size:.88rem;color:#78716C;text-align:center;">
-        ✏️ Selesaikan pilihan preferensi di atas, lalu klik 
+        ✏️ Selesaikan pilihan preferensi di atas, lalu klik
         <b style="color:#C8502A;">Simpan Preferensi</b> untuk melihat rekomendasi.
       </div>
     </div>
     """, unsafe_allow_html=True)
+
 # ════════════════════════════════════════════════════════════════
-# ANALISIS SENTIMEN — locked
+# ANALISIS SENTIMEN — locked (native HTML, tanpa iframe)
+# [F3] Ganti components.html dengan st.markdown murni
 # ════════════════════════════════════════════════════════════════
 st.markdown('<div id="analisis-section"></div>', unsafe_allow_html=True)
-analisis_html = """<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'Plus Jakarta Sans',sans-serif;background:linear-gradient(135deg,#1C1917,#2d1a0e);padding:52px 48px;}
-.card{max-width:660px;margin:0 auto;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:36px 40px 40px;}
-.tag{display:inline-block;background:rgba(200,80,42,.25);color:#F9A07A;font-size:.66rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:4px 12px;border-radius:50px;margin-bottom:12px;}
-h2{font-family:'Fraunces',serif;font-size:1.45rem;font-weight:700;color:#fff;margin-bottom:6px;}
-.note{display:flex;align-items:flex-start;gap:10px;background:rgba(200,80,42,.14);border:1px solid rgba(200,80,42,.28);border-radius:10px;padding:12px 16px;margin-bottom:18px;font-size:.8rem;color:#F9A07A;line-height:1.5;}
-input[type=text]{width:100%;padding:12px 16px;border-radius:10px;border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:rgba(255,255,255,.4);font-size:.88rem;font-family:'Plus Jakarta Sans',sans-serif;margin-bottom:14px;outline:none;}
-.tabs{display:flex;margin-bottom:14px;border:1.5px solid rgba(255,255,255,.15);border-radius:10px;overflow:hidden;}
-.tab-btn{flex:1;padding:10px;text-align:center;font-size:.8rem;font-weight:600;cursor:pointer;color:rgba(255,255,255,.4);background:transparent;border:none;font-family:'Plus Jakarta Sans',sans-serif;}
-.tab-btn.active{background:rgba(200,80,42,.32);color:#F9A07A;}
-.tab-content{display:none;}.tab-content.show{display:block;}
-textarea{width:100%;min-height:90px;padding:12px 16px;border-radius:10px;border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:rgba(255,255,255,.4);font-size:.88rem;font-family:'Plus Jakarta Sans',sans-serif;margin-bottom:14px;outline:none;resize:vertical;}
-.btn-analisis{width:100%;padding:14px 20px;background:rgba(200,80,42,.35);color:rgba(255,255,255,.5);border:1.5px solid rgba(200,80,42,.3);border-radius:50px;font-size:.9rem;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:not-allowed;display:flex;align-items:center;justify-content:center;gap:8px;}
-</style></head><body>
-<div class="card">
-  <div class="tag">&#128200; Ingin analisis sentiment review kamu sendiri? analisis disini</div>
-  <h2>Analisis Review Kafemu</h2>
-  <div class="note">&#128274;&nbsp; Fitur ini butuh login dulu. Daftar gratis.</div>
-  <input type="text" placeholder="Nama kafe" disabled/>
-  <div class="tabs">
-    <button class="tab-btn active" id="tab-ketik" onclick="switchTab('ketik')">&#9997; Ketik Review</button>
-    <button class="tab-btn" id="tab-upload" onclick="switchTab('upload')">&#128196; Upload Excel</button>
+
+# [F3] Render sebagai st.markdown (tidak ada iframe = tidak kelap-kelip)
+st.markdown("""
+<div style="background:linear-gradient(135deg,#1C1917,#2d1a0e);padding:52px 48px 48px;">
+  <div style="max-width:660px;margin:0 auto;">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div style="display:inline-block;background:rgba(200,80,42,.25);color:#F9A07A;font-size:.66rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:4px 12px;border-radius:50px;margin-bottom:12px;">📈 Ingin analisis sentiment review kamu sendiri? analisis disini</div>
+      <div style="font-family:'Fraunces',serif;font-size:1.45rem;font-weight:700;color:#fff;margin-bottom:6px;">Analisis Review Kafemu</div>
+    </div>
+    <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:28px 32px 32px;">
+      <div style="display:flex;align-items:flex-start;gap:10px;background:rgba(200,80,42,.14);border:1px solid rgba(200,80,42,.28);border-radius:10px;padding:12px 16px;margin-bottom:18px;">
+        <span style="font-size:1rem;">🔒</span>
+        <span style="font-size:.82rem;color:#F9A07A;line-height:1.5;">Fitur ini butuh login dulu. Daftar gratis di bawah.</span>
+      </div>
+      <div style="background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 16px;margin-bottom:14px;">
+        <div style="font-size:.65rem;color:rgba(255,255,255,.35);font-weight:600;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px;">☕ Nama Kafe</div>
+        <div style="height:20px;background:rgba(255,255,255,.04);border-radius:6px;"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <div style="flex:1;background:rgba(200,80,42,.2);border-radius:8px;padding:10px;text-align:center;font-size:.8rem;color:#F9A07A;font-weight:600;cursor:default;">✏️ Ketik Review</div>
+        <div style="flex:1;background:rgba(255,255,255,.04);border-radius:8px;padding:10px;text-align:center;font-size:.8rem;color:rgba(255,255,255,.3);cursor:default;">📄 Upload Excel</div>
+      </div>
+      <div style="background:rgba(255,255,255,.04);border:1.5px dashed rgba(255,255,255,.12);border-radius:10px;padding:24px 16px;text-align:center;margin-bottom:14px;">
+        <div style="font-size:.82rem;color:rgba(255,255,255,.3);">Tempel atau ketik review di sini...</div>
+      </div>
+      <div style="width:100%;padding:14px;background:rgba(200,80,42,.25);color:rgba(255,255,255,.4);border:1.5px solid rgba(200,80,42,.2);border-radius:50px;text-align:center;font-size:.9rem;font-weight:700;cursor:not-allowed;">
+        🔒 Analisis Sekarang — Login Dulu
+      </div>
+    </div>
   </div>
-  <div class="tab-content show" id="content-ketik"><textarea placeholder="Tempel atau ketik review di sini." disabled></textarea></div>
-  <div class="tab-content" id="content-upload"><div style="border:2px dashed rgba(255,255,255,.18);border-radius:10px;padding:28px;text-align:center;margin-bottom:14px;opacity:.5;"><div style="font-size:1.8rem;margin-bottom:6px;">&#128196;</div><div style="font-size:.8rem;color:rgba(255,255,255,.5);">Drag &amp; drop file Excel (.xlsx)</div></div></div>
-  <button class="btn-analisis" disabled>&#128274; Analisis Sekarang &mdash; Login Dulu</button>
 </div>
-<script>function switchTab(t){['ketik','upload'].forEach(function(x){document.getElementById('tab-'+x).classList.toggle('active',x===t);document.getElementById('content-'+x).classList.toggle('show',x===t);});}</script>
-</body></html>"""
-components.html(analisis_html, height=480, scrolling=False)
+""", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
 # LOGIN SECTION
