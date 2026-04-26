@@ -174,95 +174,15 @@ st.markdown("""
 # ════════════════════════════════════════════════════════════════
 # AMBIL DATA DARI SESSION STATE
 # ════════════════════════════════════════════════════════════════
-result_data      = st.session_state.get("analisis_result", {})
-nama_kafe        = result_data.get("nama_kafe", "Kafe Tidak Diketahui")
-jumlah_rev       = result_data.get("jumlah_review", 0)
-raw_aspects      = result_data.get("raw_aspects", [])
-original_reviews = result_data.get("original_reviews", [])
-n_analyzed       = result_data.get("n_analyzed", jumlah_rev)
-was_truncated    = result_data.get("was_truncated", False)
+df_converted = result_data.get("df_converted", pd.DataFrame())
 
-# ════════════════════════════════════════════════════════════════
-# LOAD DF_KONVERSI dari Google Sheets (bukan file lokal)
-# ════════════════════════════════════════════════════════════════
-
-@st.cache_data(show_spinner=False, ttl=600)
-def load_konversi() -> pd.DataFrame:
-    try:
-        from gsheets_client import read_sheet_as_df
-        df = read_sheet_as_df("df_konversi")
-        if df.empty:
-            raise ValueError("Sheet df_konversi kosong")
-        df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
-        required = ["category", "category_aspect_kafe", "aspect_condition"]
-        missing  = [c for c in required if c not in df.columns]
-        if missing:
-            st.warning(f"⚠️ Kolom df_konversi tidak lengkap: {missing}")
-            return pd.DataFrame(columns=required + ["_cat_norm"])
-        df["_cat_norm"] = (df["category"].astype(str)
-                           .str.lower().str.strip()
-                           .str.replace(r"[\s\-_/]+", "_", regex=True))
-        return df
-    except Exception as e:
-        st.warning(f"⚠️ Gagal load df_konversi dari Google Sheets: {e}")
-        return pd.DataFrame(
-            columns=["category", "category_aspect_kafe", "aspect_condition", "_cat_norm"]
-        )
-
-
-def _normalize_cat(s: str) -> str:
-    return re.sub(r"[\s\-_/]+", "_", str(s).lower().strip())
-
-
-def build_converted_df(raw_aspects_list: list, df_konv: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for asp in raw_aspects_list:
-        cat     = str(asp.get("category", "")).strip()
-        sent    = str(asp.get("sentiment", "positive")).strip().lower()
-        conf    = float(asp.get("confidence", 0))
-        src_rev = str(asp.get("_source_review", "")).strip()
-
-        skor     = 1.0 if sent == "positive" else 0.0
-        cat_norm = _normalize_cat(cat)
-
-        cat_kafe = cat
-        asp_cond = cat
-
-        if not df_konv.empty and "_cat_norm" in df_konv.columns:
-            match = df_konv[df_konv["_cat_norm"] == cat_norm]
-            if match.empty:
-                match = df_konv[
-                    df_konv["_cat_norm"].str.contains(cat_norm, na=False, regex=False)
-                ]
-            if match.empty:
-                match = df_konv[
-                    df_konv["_cat_norm"].apply(lambda x: bool(x) and x in cat_norm)
-                ]
-            if not match.empty:
-                row_k    = match.iloc[0]
-                cat_kafe = str(row_k.get("category_aspect_kafe", cat))
-                asp_cond = str(row_k.get("aspect_condition", cat))
-
-        rows.append({
-            "review"              : src_rev,
-            "category_aspect_kafe": cat_kafe,
-            "aspect_condition"    : asp_cond,
-            "sentimen"            : sent,
-            "skor"                : skor,
-            "confidence"          : conf,
-            "_aspect"             : str(asp.get("aspect", "")),
-            "_category_raw"       : cat,
-        })
-
-    return pd.DataFrame(rows) if rows else pd.DataFrame(
-        columns=["review", "category_aspect_kafe", "aspect_condition",
-                 "sentimen", "skor", "confidence", "_aspect", "_category_raw"]
+# Pastikan kolom skor ada dan bertipe numerik
+if not df_converted.empty and "skor_sentimen" in df_converted.columns:
+    df_converted["skor"] = pd.to_numeric(df_converted["skor_sentimen"], errors="coerce").fillna(0)
+elif not df_converted.empty and "skor" not in df_converted.columns:
+    df_converted["skor"] = df_converted.get("sentimen", pd.Series()).apply(
+        lambda x: 1.0 if str(x).lower() == "positive" else 0.0
     )
-
-
-df_konv      = load_konversi()
-df_converted = build_converted_df(raw_aspects, df_konv)
-
 # ════════════════════════════════════════════════════════════════
 # PERHITUNGAN RUMUS A: IMDb Weighted Rating + SAW
 # ════════════════════════════════════════════════════════════════
