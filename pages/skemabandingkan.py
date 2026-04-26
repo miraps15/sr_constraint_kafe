@@ -145,7 +145,17 @@ def get_df() -> pd.DataFrame:
     return df
 
 df = get_df()
-# Reuse hasil komputasi dari app_kafe jika sudah ada
+
+# ✅ Definisi fungsi DULU, baru dipanggil
+@st.cache_data(show_spinner=False, ttl=1800)
+def get_saw_cat_df(_df: pd.DataFrame) -> pd.DataFrame:
+    return compute_saw_scores(_df)
+
+@st.cache_data(show_spinner=False, ttl=1800)
+def get_overall_df(_df: pd.DataFrame) -> pd.DataFrame:
+    return compute_overall_score(_df)
+
+# ✅ Baru dipanggil setelah fungsi ada
 if "_cached_saw_cat" not in st.session_state:
     saw_cat_df = get_saw_cat_df(df)
     st.session_state["_cached_saw_cat"] = saw_cat_df
@@ -205,17 +215,6 @@ if not valid_names:
     if st.button("← Kembali ke Beranda"):
         st.switch_page(_beranda_page)
     st.stop()
-
-# ════════════════════════════════════════════════════════════════
-# CACHE: SAW score per category (Kasus C) dan overall (Kasus A)
-# ════════════════════════════════════════════════════════════════
-@st.cache_data(show_spinner=False, ttl=1800)
-def get_saw_cat_df(_df: pd.DataFrame) -> pd.DataFrame:
-    return compute_saw_scores(_df)
-
-@st.cache_data(show_spinner=False, ttl=1800)
-def get_overall_df(_df: pd.DataFrame) -> pd.DataFrame:
-    return compute_overall_score(_df)
 
 _cat_badge_colors = ["#C8502A","#B8730A","#1A6EB0","#1A7A3C","#7C3AED","#BE185D"]
 _cat_badge_bgs    = ["#FFF0EB","#FFF7E6","#EBF5FF","#F0FBF0","#F5F0FF","#FFF0F5"]
