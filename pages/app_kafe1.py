@@ -1085,12 +1085,21 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
     status_text.empty()
     progress_bar.empty()
 
+    # ✅ GANTI blok tersebut dengan:
     df_conv = _absa_engine.convert_aspects_to_kafe_format(all_aspects)
-
+    
     if not df_conv.empty:
         if "review" not in df_conv.columns:
-            df_conv["review"] = [a.get("_source_review", "") for a in all_aspects
-                                 if len(all_aspects) == len(df_conv)]
+            # ✅ FIX: Assign review dari _source_review tanpa kondisi panjang
+            df_conv["review"] = [a.get("_source_review", "") for a in all_aspects]
+        
+        # ✅ Pastikan kolom skor ada
+        if "skor_sentimen" not in df_conv.columns and "sentimen" in df_conv.columns:
+            df_conv["skor_sentimen"] = df_conv["sentimen"].apply(
+                lambda x: 1.0 if str(x).lower() == "positive" else 0.0
+            )
+        # Alias skor untuk kompatibilitas hasilanalisis.py
+        df_conv["skor"] = pd.to_numeric(df_conv.get("skor_sentimen", 0), errors="coerce").fillna(0)
 
     result = {
         "raw_aspects"     : all_aspects,
