@@ -7,7 +7,6 @@
 # ============================================================
 
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import os
@@ -363,9 +362,16 @@ function goSlide(i){{
 if(n>1)setInterval(function(){{goSlide((cur+1)%n);}},3800);
 </script>"""
         total_h = 320 + (30 if n_slides > 1 else 0) + maps_height + 40
-        components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{{box-sizing:border-box;margin:0;padding:0;}}body{{background:transparent;overflow:hidden;}}</style></head><body>
-<div style="width:100%;"><div style="position:relative;width:100%;border-radius:16px;overflow:hidden;">{slides_inner}{nav_btns}</div>{dots_inner}{maps_section}</div>{js_code}</body></html>""",
-                         height=total_h, scrolling=False)
+        st.markdown(f"""
+<div style="width:100%;position:relative;">
+  <div style="position:relative;width:100%;border-radius:16px;overflow:hidden;">
+    {slides_inner}{nav_btns}
+  </div>
+  {dots_inner}
+  {maps_section}
+</div>
+{js_code}
+""", unsafe_allow_html=True)
     else:
         maps_section = ""
         maps_height  = 0
@@ -373,9 +379,16 @@ if(n>1)setInterval(function(){{goSlide((cur+1)%n);}},3800);
             q_enc        = nama_kafe.replace(" ", "+") + "+Surabaya"
             maps_section = f"""<div style="margin-top:14px;"><a href="{maps_link}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;background:#1C1917;color:#fff;padding:10px 20px;border-radius:50px;text-decoration:none;font-size:.82rem;font-weight:700;font-family:sans-serif;">&#128205; Lihat di Google Maps</a></div><div style="border-radius:14px;overflow:hidden;margin-top:10px;"><iframe src="https://maps.google.com/maps?q={q_enc}&output=embed" width="100%" height="180" style="border:0;display:block;" allowfullscreen loading="lazy"></iframe></div>"""
             maps_height  = 250
-        components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{{box-sizing:border-box;margin:0;padding:0;}}body{{background:transparent;}}</style></head><body>
-<div style="width:100%;height:320px;border-radius:16px;background:#f5ede5;display:flex;align-items:center;justify-content:center;font-size:5rem;color:#c8a898;">&#9749;</div>
-{maps_section}</body></html>""", height=320 + maps_height + 20, scrolling=False)
+        st.markdown(f"""
+<div style="width:100%;">
+  <div style="width:100%;height:320px;border-radius:16px;background:#f5ede5;
+    display:flex;align-items:center;justify-content:center;font-size:5rem;color:#c8a898;">
+    &#9749;
+  </div>
+  {maps_section}
+</div>
+js_code_fallback = ""  # tidak ada slideshow, tidak perlu JS
+""", unsafe_allow_html=True)
 
 # ── KOLOM KANAN: Skor + Info + Favorit ───────────────────────
 with col_info:
