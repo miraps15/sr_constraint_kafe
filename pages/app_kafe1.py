@@ -17,7 +17,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import urllib.parse
-import json, os, sys, hashlib, tempfile, requests
+import json, io, os, sys, hashlib, tempfile, requests
 
 from utils_kafe import (
     load_data,
@@ -816,7 +816,8 @@ def _build_category_html_1(
     is_google: bool,
     card_w: int, img_h: int, top5_h: int, body_h: int,
 ) -> str:
-    ranked_df       = pd.read_json(ranked_json, orient="records")
+    import io
+    ranked_df       = pd.read_json(io.StringIO(ranked_json), orient="records")
     top5_lookup     = json.loads(top5_json)
     jml_review_map  = json.loads(jml_review_json)
     reviewer_aktif  = json.loads(reviewer_aktif_json)
@@ -868,7 +869,7 @@ def build_all_slides_html_1(
     is_google: bool,
     card_w: int, img_h: int, top5_h: int, body_h: int,
 ) -> str:
-    best_df        = pd.read_json(best_df_json, orient="records")
+    best_df        = pd.read_json(io.StringIO(best_df_json), orient="records")
     top5_lookup    = json.loads(top5_json)
     unique_cats    = json.loads(cats_json)
     clrs           = json.loads(clrs_json)
