@@ -76,10 +76,13 @@ with st.expander("2. Cache Files (Google Drive Downloads)", expanded=True):
             import pandas as pd
             rows = []
             for f in sorted(files):
-                fp = os.path.join(cache_dir, f)
+                fp   = os.path.join(cache_dir, f)
                 size = os.path.getsize(fp)
-                rows.append({"File": f, "Size (MB)": round(size / (1024*1024), 2),
-                             "Status": "✅ OK" if size > 10000 else "❌ Terlalu kecil (mungkin HTML error)"})
+                rows.append({
+                    "File"      : f,
+                    "Size (MB)" : round(size / (1024 * 1024), 2),
+                    "Status"    : "✅ OK" if size > 10000 else "❌ Terlalu kecil (mungkin HTML error)"
+                })
             st.dataframe(pd.DataFrame(rows))
         else:
             st.warning("Cache dir kosong — belum ada file yang didownload")
@@ -91,11 +94,61 @@ with st.expander("2. Cache Files (Google Drive Downloads)", expanded=True):
             import shutil
             shutil.rmtree(cache_dir)
             os.makedirs(cache_dir, exist_ok=True)
-        # Clear Streamlit resource cache
         st.cache_resource.clear()
         st.cache_data.clear()
         st.success("Cache dihapus! Refresh halaman untuk re-download")
 
+    st.markdown("---")  # ← pemisah visual
+
+    # ── Test Download GloVe ──────────────────────────────────
+    if st.button("🔄 Test Download GloVe Sekarang"):
+        from absa_engine import _GDRIVE_IDS, _cached_path
+        import requests
+
+        st.write(f"**GloVe File ID:** `{_GDRIVE_IDS['glove']}`")
+
+        try:
+            r = requests.get(
+                f"https://drive.google.com/uc?export=download&id={_GDRIVE_IDS['glove']}",
+                stream=True,
+                timeout=30
+            )
+            content_type = r.headers.get("content-type", "")
+            first_bytes  = next(r.iter_content(chunk_size=512), b"")
+
+            st.write("**Status code:**", r.status_code)
+            st.write("**Content-Type:**", content_type)
+            st.write("**Cookies:**", dict(r.cookies))
+            st.write("**Bytes pertama (raw):**", first_bytes[:200])
+
+            if b"<!DOCTYPE" in first_bytes or b"<html" in first_bytes:
+                st.error("❌ Google Drive mengembalikan HTML — file tidak publik atau perlu confirm token")
+                st.code(first_bytes.decode("utf-8", errors="ignore"), language="html")
+
+                # Cek apakah ada confirm token di cookies
+                confirm = None
+                for k, v in r.cookies.items():
+                    if k.startswith("download_warning"):
+                        confirm = v
+                        break
+                if confirm:
+                    st.info(f"✅ Confirm token ditemukan di cookies: `{confirm}` — download seharusnya bisa dengan token ini")
+                else:
+                    st.warning("⚠️ Tidak ada confirm token di cookies — kemungkinan file di-restrict Google")
+
+            elif first_bytes and first_bytes[:4].isascii():
+                st.success("✅ Respons tampak seperti teks GloVe yang valid")
+                st.write("**Sample 200 karakter pertama:**")
+                st.code(first_bytes[:200].decode("utf-8", errors="ignore"))
+            else:
+                st.warning("⚠️ Format tidak dikenali — mungkin binary atau encoding lain")
+                st.write("Hex:", first_bytes[:50].hex())
+
+        except Exception as e:
+            st.error(f"❌ Request gagal: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+            
 # ─── SECTION 3: MODEL LOAD TEST ───────────────────────────────
 with st.expander("3. Model Load Test", expanded=True):
     if st.button("🔄 Test Load Model (bisa butuh beberapa menit)"):
