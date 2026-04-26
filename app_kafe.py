@@ -621,7 +621,7 @@ def _build_one_card_html(row, rank, cat, bg_sec, top5_lookup, reviewer_aktif_pct
     else:
         img_html = (f'<div style="width:100%;height:{IMG_H}px;background:#f5ede5;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#c8a898;flex-direction:column;">&#9749;<small style="font-size:.55rem;text-transform:uppercase;">No Photo</small></div>')
 
-    top5_list = top5_lookup.get((kid, cat), [])
+    top5_list = top5_lookup.get(f"{kid}|{cat}", [])
     top5_html = ""
     if top5_list:
         _dot_colors = ["#C8502A","#B8730A","#1A6EB0","#1A7A3C","#7C3AED"]
@@ -773,9 +773,11 @@ def build_all_slides_html(
         # Build top5_lookup subset untuk kategori ini (kurangi ukuran JSON)
         kids_in_cat = set(cat_ranked["kafe_id"].astype(str).tolist())
         top5_subset = {
-            f"{k}|{c}": v
-            for (k, c), v in top5_lookup.items()
-            if k in kids_in_cat and c == cat
+            key: v
+            for key, v in top5_lookup.items()
+            if isinstance(key, str) and "|" in key
+            and key.split("|", 1)[0] in kids_in_cat
+            and key.split("|", 1)[1] == cat
         }
 
         section_html = _build_category_section_html(
