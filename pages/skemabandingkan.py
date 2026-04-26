@@ -146,7 +146,19 @@ def get_df() -> pd.DataFrame:
     return df
 
 df = get_df()
+# Reuse hasil komputasi dari app_kafe jika sudah ada
+if "_cached_saw_cat" not in st.session_state:
+    saw_cat_df = get_saw_cat_df(df)
+    st.session_state["_cached_saw_cat"] = saw_cat_df
+else:
+    saw_cat_df = st.session_state["_cached_saw_cat"]
 
+if "_cached_overall" not in st.session_state:
+    overall_df = get_overall_df(df)
+    st.session_state["_cached_overall"] = overall_df
+else:
+    overall_df = st.session_state["_cached_overall"]
+    
 # ════════════════════════════════════════════════════════════════
 # PRECOMPUTE reviewer aktif per kafe_id
 # ════════════════════════════════════════════════════════════════
@@ -198,18 +210,13 @@ if not valid_names:
 # ════════════════════════════════════════════════════════════════
 # CACHE: SAW score per category (Kasus C) dan overall (Kasus A)
 # ════════════════════════════════════════════════════════════════
-@st.cache_data(show_spinner=False)
-def get_saw_cat_df() -> pd.DataFrame:
-    """Kasus C: skor per kategori untuk semua kafe. Wj = 1/n_cond_per_kategori."""
-    return compute_saw_scores(df)
+@st.cache_data(show_spinner=False, ttl=1800)
+def get_saw_cat_df(_df: pd.DataFrame) -> pd.DataFrame:
+    return compute_saw_scores(_df)
 
-@st.cache_data(show_spinner=False)
-def get_overall_df() -> pd.DataFrame:
-    """Kasus A: skor Vi keseluruhan semua kafe. Wj = 1/n_cond_global."""
-    return compute_overall_score(df)
-
-saw_cat_df = get_saw_cat_df()
-overall_df = get_overall_df()
+@st.cache_data(show_spinner=False, ttl=1800)
+def get_overall_df(_df: pd.DataFrame) -> pd.DataFrame:
+    return compute_overall_score(_df)
 
 _cat_badge_colors = ["#C8502A","#B8730A","#1A6EB0","#1A7A3C","#7C3AED","#BE185D"]
 _cat_badge_bgs    = ["#FFF0EB","#FFF7E6","#EBF5FF","#F0FBF0","#F5F0FF","#FFF0F5"]
