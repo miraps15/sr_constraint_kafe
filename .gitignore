@@ -42,7 +42,7 @@ absa_cache/
 *.xlsx
 *.csv
 # Kecuali jika ada sample data kecil yang memang perlu di-commit
-# !sample_data.csv
+!sample_data.csv
 
 # ── Jupyter Notebook checkpoints ─────────────────────────────
 .ipynb_checkpoints/
@@ -69,10 +69,6 @@ desktop.ini
 *.log
 logs/
 
-# ── Streamlit generated ──────────────────────────────────────
-# (secrets.toml sudah di atas, tapi pastikan folder juga)
-# .streamlit/ folder boleh di-commit KECUALI secrets.toml
-# Baris berikut memastikan folder .streamlit tetap masuk
-# tapi secrets.toml tidak
+# ── Streamlit: folder .streamlit boleh di-commit KECUALI secrets.toml ──
 !.streamlit/
 !.streamlit/config.toml
