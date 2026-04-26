@@ -5,7 +5,6 @@
 # - Tidak ada perubahan fungsionalitas utama (IMDb WR + SAW, Kasus A/C)
 
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import json
@@ -505,17 +504,9 @@ for rank, nama in enumerate(valid_names_sorted, 1):
     </div>"""
 
 scroll_h    = 580
-scroll_html = f"""<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
+scroll_html_inline = f"""
 <style>
-* {{ box-sizing: border-box; margin: 0; padding: 0; }}
-body {{
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  background: transparent;
-  overflow: hidden;
-}}
-.scroll-outer {{
+.scroll-outer-cmp {{
   overflow-x: auto;
   overflow-y: hidden;
   padding-bottom: 12px;
@@ -524,11 +515,11 @@ body {{
   scrollbar-width: thin;
   scrollbar-color: #C8502A #F0EAE4;
 }}
-.scroll-outer:active {{ cursor: grabbing; }}
-.scroll-outer::-webkit-scrollbar {{ height: 5px; }}
-.scroll-outer::-webkit-scrollbar-track {{ background: #F0EAE4; border-radius: 3px; }}
-.scroll-outer::-webkit-scrollbar-thumb {{ background: #C8502A; border-radius: 3px; }}
-.scroll-inner {{
+.scroll-outer-cmp:active {{ cursor: grabbing; }}
+.scroll-outer-cmp::-webkit-scrollbar {{ height: 5px; }}
+.scroll-outer-cmp::-webkit-scrollbar-track {{ background: #F0EAE4; border-radius: 3px; }}
+.scroll-outer-cmp::-webkit-scrollbar-thumb {{ background: #C8502A; border-radius: 3px; }}
+.scroll-inner-cmp {{
   display: flex;
   flex-direction: row;
   gap: {CARD_GAP}px;
@@ -537,34 +528,36 @@ body {{
   padding-bottom: 4px;
 }}
 </style>
-</head><body>
-<div class="scroll-outer" id="scrollOuter">
-  <div class="scroll-inner">
+<div class="scroll-outer-cmp" id="scrollOuterCmp">
+  <div class="scroll-inner-cmp">
     {all_cards_html}
   </div>
 </div>
 <script>
-var el = document.getElementById('scrollOuter');
-var isDown = false, startX, scrollLeft;
-el.addEventListener('mousedown', function(e) {{
-  isDown = true; startX = e.pageX - el.offsetLeft; scrollLeft = el.scrollLeft;
-}});
-el.addEventListener('mouseleave', function() {{ isDown = false; }});
-el.addEventListener('mouseup', function() {{ isDown = false; }});
-el.addEventListener('mousemove', function(e) {{
-  if (!isDown) return;
-  e.preventDefault();
-  var x = e.pageX - el.offsetLeft;
-  el.scrollLeft = scrollLeft - (x - startX);
-}});
+(function(){{
+  var el = document.getElementById('scrollOuterCmp');
+  if (!el) return;
+  var isDown = false, startX, scrollLeft;
+  el.addEventListener('mousedown', function(e) {{
+    isDown = true; startX = e.pageX - el.offsetLeft; scrollLeft = el.scrollLeft;
+  }});
+  el.addEventListener('mouseleave', function() {{ isDown = false; }});
+  el.addEventListener('mouseup', function() {{ isDown = false; }});
+  el.addEventListener('mousemove', function(e) {{
+    if (!isDown) return;
+    e.preventDefault();
+    var x = e.pageX - el.offsetLeft;
+    el.scrollLeft = scrollLeft - (x - startX);
+  }});
+}})();
 
 function navigateToDetail(kid, nama) {{
   try {{
-    var parentUrl  = window.parent.location.href;
-    var baseUrl    = parentUrl.split('?')[0].replace(/\\/[^\\/]*$/, '');
-    var url        = baseUrl + '/skemacari1?kid=' + encodeURIComponent(kid)
-                             + '&nama=' + encodeURIComponent(nama)
-                             + '&source=kasus_a';
+    var parentUrl = window.parent.location.href;
+    var baseUrl   = parentUrl.split('?')[0].replace(/\\/[^\\/]*$/, '');
+    var url       = baseUrl + '/skemacari1?kid=' + encodeURIComponent(kid)
+                            + '&nama=' + encodeURIComponent(nama)
+                            + '&source=kasus_a';
     window.open(url, '_blank');
   }} catch(e) {{
     window.open('/skemacari1?kid=' + encodeURIComponent(kid)
@@ -572,11 +565,10 @@ function navigateToDetail(kid, nama) {{
                 + '&source=kasus_a', '_blank');
   }}
 }}
-</script>
-</body></html>"""
+</script>"""
 
 st.markdown('<div style="padding:0 48px 28px;background:#fff;">', unsafe_allow_html=True)
-components.html(scroll_html, height=scroll_h, scrolling=False)
+st.markdown(scroll_html_inline, unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<hr style="border:none;border-top:1px solid #E8DDD5;margin:0;">', unsafe_allow_html=True)
