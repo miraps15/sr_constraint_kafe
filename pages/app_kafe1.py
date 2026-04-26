@@ -722,34 +722,22 @@ def _build_one_card_html(row: pd.Series, rank: int, cat: str,
             f'align-items:center;justify-content:center;font-size:2rem;color:#c8a898;'
             f'flex-direction:column;">&#9749;<small style="font-size:.55rem;text-transform:uppercase;">No Photo</small></div>'
         )
-    top5_df   = top5_lookup.get((kid, cat), pd.DataFrame())
+    top5_list = top5_lookup.get((kid, cat), [])
     top5_html = ""
-    if not top5_df.empty:
+    if top5_list:
         _dot_colors = ["#C8502A","#B8730A","#1A6EB0","#1A7A3C","#7C3AED"]
-        top5_html = (
-            f'<div style="border-top:1px solid #E8DDD5;padding:7px 11px 9px;background:#FAFAF8;'
-            f'height:{TOP5_H}px;box-sizing:border-box;overflow:hidden;">'
-            f'<div style="font-size:.58rem;color:#78716C;font-weight:600;text-transform:uppercase;'
-            f'letter-spacing:.7px;margin-bottom:5px;">&#128269; Top 5 Aspek Kafe Ini</div>'
-        )
-        for ti, trow in top5_df.iterrows():
-            cond_label = str(trow.get("aspect_condition", ""))
-            pct_val    = float(trow.get("sentimen_pct", 0))
-            bar_w      = min(int(pct_val), 100)
+        top5_html   = (f'<div style="border-top:1px solid #E8DDD5;padding:7px 11px 9px;background:#FAFAF8;'
+                       f'height:{TOP5_H}px;box-sizing:border-box;overflow:hidden;">'
+                       f'<div style="font-size:.58rem;color:#78716C;font-weight:600;text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px;">&#128269; Top 5 Aspek Kafe Ini</div>')
+        for ti, (cond_label, pct_val) in enumerate(top5_list):
+            bar_w      = min(int(float(pct_val)), 100)
             dot_clr    = _dot_colors[ti % len(_dot_colors)]
-            cond_short = cond_label[:18] + ("…" if len(cond_label) > 18 else "")
-            top5_html += (
-                f'<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">'
-                f'<div style="width:13px;height:13px;border-radius:50%;display:flex;align-items:center;'
-                f'justify-content:center;font-size:.50rem;font-weight:800;color:#fff;'
-                f'flex-shrink:0;background:{dot_clr};">{ti+1}</div>'
-                f'<div style="font-size:.61rem;color:#1C1917;font-weight:500;flex:1;min-width:0;'
-                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{cond_label}">{cond_short}</div>'
-                f'<div style="flex:1;height:3px;background:#f0e8e3;border-radius:2px;overflow:hidden;">'
-                f'<div style="height:3px;border-radius:2px;background:{dot_clr};width:{bar_w}%;"></div></div>'
-                f'<div style="font-size:.58rem;font-weight:700;min-width:26px;text-align:right;color:{dot_clr};">{pct_val:.0f}%</div>'
-                f'</div>'
-            )
+            cond_short = str(cond_label)[:18] + ("…" if len(str(cond_label)) > 18 else "")
+            top5_html += (f'<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">'
+                          f'<div style="width:13px;height:13px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.50rem;font-weight:800;color:#fff;flex-shrink:0;background:{dot_clr};">{ti+1}</div>'
+                          f'<div style="font-size:.61rem;color:#1C1917;font-weight:500;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{cond_label}">{cond_short}</div>'
+                          f'<div style="flex:1;height:3px;background:#f0e8e3;border-radius:2px;overflow:hidden;"><div style="height:3px;border-radius:2px;background:{dot_clr};width:{bar_w}%;"></div></div>'
+                          f'<div style="font-size:.58rem;font-weight:700;min-width:26px;text-align:right;color:{dot_clr};">{float(pct_val):.0f}%</div></div>')
         top5_html += '</div>'
 
     cat_encoded = urllib.parse.quote(cat)
