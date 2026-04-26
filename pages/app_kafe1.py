@@ -982,13 +982,19 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 if not best_df.empty and not _any_popup_active_1:
-    # [F4] Guard: hanya rebuild jika belum ada di session_state
     _slides_key_1 = "_all_slides_html_loggedin"
     if _slides_key_1 not in st.session_state:
+        MAX_KAFE_PER_CAT = 15
         _top5_serializable = {f"{k}|{c}": v for (k, c), v in _top5_lookup.items()}
+        _best_df_trimmed = (
+            best_df
+            .groupby("category_aspect_kafe", group_keys=False)
+            .apply(lambda g: g.head(MAX_KAFE_PER_CAT))
+            .reset_index(drop=True)
+        )
 
         _all_html_1 = build_all_slides_html_1(
-            best_df_json        = best_df.to_json(orient="records"),
+            best_df_json        = _best_df_trimmed.to_json(orient="records"),
             top5_json           = json.dumps(_top5_serializable),
             jml_review_json     = json.dumps(_jml_review_map),
             reviewer_aktif_json = json.dumps(_reviewer_aktif_map),
@@ -1003,11 +1009,9 @@ if not best_df.empty and not _any_popup_active_1:
             top5_h              = TOP5_H,
             body_h              = BODY_H,
         )
-        st.session_state[_slides_key_1]         = _all_html_1
+        st.session_state[_slides_key_1] = _all_html_1
 
     _all_html_1 = st.session_state[_slides_key_1]
-
-    # BARU:
     if _all_html_1:
         st.markdown(_all_html_1, unsafe_allow_html=True)
 
@@ -1115,8 +1119,10 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
 # ════════════════════════════════════════════════════════════════
 # RENDER BAGIAN ANALISIS
 # ════════════════════════════════════════════════════════════════
-st.markdown('<div id="analisis-section"></div>', unsafe_allow_html=True)
-st.markdown("""
+@st.fragment
+def _render_analisis_section():
+    st.markdown('<div id="analisis-section"></div>', unsafe_allow_html=True)
+    st.markdown("""
 <div style="background:linear-gradient(135deg,#1C1917,#2d1a0e);padding:52px 48px 0;">
   <div style="max-width:680px;margin:0 auto;text-align:center;padding-bottom:4px;">
     <div style="display:inline-block;background:rgba(200,80,42,.25);color:#F9A07A;font-size:.66rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:4px 12px;border-radius:50px;margin-bottom:12px;">📈 Untuk Pemilik Kafe</div>
@@ -1127,107 +1133,110 @@ st.markdown("""
 <div style="background:linear-gradient(135deg,#1C1917,#2d1a0e);padding:4px 48px 52px;"></div>
 """, unsafe_allow_html=True)
 
-if not _engine_available:
-    st.markdown(f'<div style="background:#FFF0EB;border:2px solid #C8502A;border-radius:12px;padding:14px 20px;margin:12px 48px;"><b style="color:#C8502A;">⚠️ absa_engine tidak tersedia.</b><br><span style="font-size:.82rem;color:#78716C;">{_engine_import_error[:200]}</span></div>', unsafe_allow_html=True)
+    if not _engine_available:
+        st.markdown(f'<div style="background:#FFF0EB;border:2px solid #C8502A;border-radius:12px;padding:14px 20px;margin:12px 48px;"><b style="color:#C8502A;">⚠️ absa_engine tidak tersedia.</b><br><span style="font-size:.82rem;color:#78716C;">{_engine_import_error[:200]}</span></div>', unsafe_allow_html=True)
 
-with st.container():
-    _, col_analisis, _ = st.columns([1, 8, 1])
-    with col_analisis:
-        st.markdown('<div style="padding:12px 0 4px;"><span style="font-size:.84rem;font-weight:700;color:#78716C;letter-spacing:.5px;">☕ NAMA KAFE</span></div>', unsafe_allow_html=True)
-        analisis_nama = st.text_input(
-            "Nama kafe", placeholder="Masukkan nama kafe",
-            key="analisis_nama_kafe", label_visibility="collapsed"
-        )
-        st.markdown('<div style="padding:18px 0 4px;"><span style="font-size:.84rem;font-weight:700;color:#78716C;letter-spacing:.5px;">📝 SUMBER REVIEW</span></div>', unsafe_allow_html=True)
-        tab_choice = st.radio("Sumber review", options=["✏️ Ketik / Tempel Review", "📄 Upload File Excel"],
-                              horizontal=True, key="analisis_tab_radio", label_visibility="collapsed")
-
-        analisis_reviews = []
-        if tab_choice == "✏️ Ketik / Tempel Review":
-            analisis_review_text = st.text_area("Review",
-                placeholder="Tempel atau ketik review di sini.\nSatu review per baris.",
-                height=160, key="analisis_review_textarea", label_visibility="collapsed")
-            if analisis_review_text:
-                analisis_reviews = [r.strip() for r in analisis_review_text.split("\n") if r.strip()]
-        else:
-            uploaded_file = st.file_uploader("Upload file Excel", type=["xlsx"],
-                                             key="analisis_excel_upload", label_visibility="collapsed")
-            if uploaded_file is not None:
-                try:
-                    df_uploaded = pd.read_excel(uploaded_file)
-                    df_uploaded.columns = [c.strip().lower() for c in df_uploaded.columns]
-                    if "review" not in df_uploaded.columns:
-                        st.markdown('<div style="background:#FFF0EB;border:1.5px solid #C8502A;border-radius:10px;padding:10px 16px;"><span style="font-size:.84rem;font-weight:700;color:#C8502A;">⚠️ Kolom review tidak ditemukan.</span></div>', unsafe_allow_html=True)
-                    else:
-                        analisis_reviews = df_uploaded["review"].dropna().astype(str).str.strip().tolist()
-                        analisis_reviews = [r for r in analisis_reviews if r]
-                        st.markdown(f'<div style="background:#EDFAF2;border:1.5px solid #22C55E;border-radius:10px;padding:10px 16px;"><span style="font-size:.84rem;font-weight:700;color:#1A7A3C;">✅ {len(analisis_reviews)} review siap dari {uploaded_file.name}</span></div>', unsafe_allow_html=True)
-                except Exception as e_up:
-                    st.markdown(f'<div style="background:#FFF0EB;border:1.5px solid #C8502A;border-radius:10px;padding:10px 16px;"><span style="font-size:.84rem;font-weight:700;color:#C8502A;">❌ Gagal: {str(e_up)[:80]}</span></div>', unsafe_allow_html=True)
-
-        if analisis_reviews and len(analisis_reviews) > MAX_REVIEW_BATCH:
-            st.markdown(
-                f'<div style="background:#FFFBEB;border:1.5px solid #F59E0B;border-radius:10px;'
-                f'padding:8px 14px;margin-top:6px;">'
-                f'<span style="font-size:.84rem;color:#B8730A;">⚡ <b>{len(analisis_reviews)} review</b> terdeteksi. '
-                f'Hanya <b>{MAX_REVIEW_BATCH} review pertama</b> yang dianalisis untuk menjaga performa.</span></div>',
-                unsafe_allow_html=True
+    with st.container():
+        _, col_analisis, _ = st.columns([1, 8, 1])
+        with col_analisis:
+            st.markdown('<div style="padding:12px 0 4px;"><span style="font-size:.84rem;font-weight:700;color:#78716C;letter-spacing:.5px;">☕ NAMA KAFE</span></div>', unsafe_allow_html=True)
+            analisis_nama = st.text_input(
+                "Nama kafe", placeholder="Masukkan nama kafe",
+                key="analisis_nama_kafe", label_visibility="collapsed"
             )
+            st.markdown('<div style="padding:18px 0 4px;"><span style="font-size:.84rem;font-weight:700;color:#78716C;letter-spacing:.5px;">📝 SUMBER REVIEW</span></div>', unsafe_allow_html=True)
+            tab_choice = st.radio("Sumber review", options=["✏️ Ketik / Tempel Review", "📄 Upload File Excel"],
+                                  horizontal=True, key="analisis_tab_radio", label_visibility="collapsed")
 
-        if st.session_state.get("analisis_error"):
-            st.markdown(f'<div style="background:#FFF0EB;border:2px solid #C8502A;border-radius:12px;padding:14px 18px;margin-top:8px;"><span style="font-size:.84rem;font-weight:700;color:#C8502A;">❌ Error:</span><br><span style="font-size:.84rem;color:#78716C;">{st.session_state["analisis_error"]}</span></div>', unsafe_allow_html=True)
-            _, col_retry = st.columns([7, 2])
-            with col_retry:
-                if st.button("🔄 Coba Lagi", key="btn_analisis_retry"):
-                    st.session_state["analisis_error"] = ""; st.rerun()
-
-        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-        btn_disabled = (not bool(analisis_nama.strip()) or not bool(analisis_reviews) or
-                        st.session_state.get("analisis_processing", False) or not _engine_available)
-        col_btn_an, col_hint_an = st.columns([2, 5])
-        with col_btn_an:
-            btn_label    = "⏳ Sedang Diproses..." if st.session_state.get("analisis_processing") else "📊 Analisis Sekarang"
-            btn_analisis = st.button(btn_label, key="btn_analisis_main",
-                                     disabled=btn_disabled, use_container_width=True)
-        with col_hint_an:
-            if not _engine_available:
-                st.markdown('<span style="font-size:.84rem;color:#C8502A;">← absa_engine tidak tersedia</span>', unsafe_allow_html=True)
-            elif not analisis_nama.strip():
-                st.markdown('<span style="font-size:.84rem;color:#bbb;">← Isi nama kafe dulu</span>', unsafe_allow_html=True)
-            elif not analisis_reviews:
-                st.markdown('<span style="font-size:.84rem;color:#bbb;">← Masukkan review dulu</span>', unsafe_allow_html=True)
+            analisis_reviews = []
+            if tab_choice == "✏️ Ketik / Tempel Review":
+                analisis_review_text = st.text_area("Review",
+                    placeholder="Tempel atau ketik review di sini.\nSatu review per baris.",
+                    height=160, key="analisis_review_textarea", label_visibility="collapsed")
+                if analisis_review_text:
+                    analisis_reviews = [r.strip() for r in analisis_review_text.split("\n") if r.strip()]
             else:
-                n_uniq = min(len(set(r.strip() for r in analisis_reviews if r.strip())), MAX_REVIEW_BATCH)
-                st.markdown(f'<span style="font-size:.84rem;color:#78716C;">← {n_uniq} review unik akan dianalisis</span>', unsafe_allow_html=True)
+                uploaded_file = st.file_uploader("Upload file Excel", type=["xlsx"],
+                                                 key="analisis_excel_upload", label_visibility="collapsed")
+                if uploaded_file is not None:
+                    try:
+                        df_uploaded = pd.read_excel(uploaded_file)
+                        df_uploaded.columns = [c.strip().lower() for c in df_uploaded.columns]
+                        if "review" not in df_uploaded.columns:
+                            st.markdown('<div style="background:#FFF0EB;border:1.5px solid #C8502A;border-radius:10px;padding:10px 16px;"><span style="font-size:.84rem;font-weight:700;color:#C8502A;">⚠️ Kolom review tidak ditemukan.</span></div>', unsafe_allow_html=True)
+                        else:
+                            analisis_reviews = df_uploaded["review"].dropna().astype(str).str.strip().tolist()
+                            analisis_reviews = [r for r in analisis_reviews if r]
+                            st.markdown(f'<div style="background:#EDFAF2;border:1.5px solid #22C55E;border-radius:10px;padding:10px 16px;"><span style="font-size:.84rem;font-weight:700;color:#1A7A3C;">✅ {len(analisis_reviews)} review siap dari {uploaded_file.name}</span></div>', unsafe_allow_html=True)
+                    except Exception as e_up:
+                        st.markdown(f'<div style="background:#FFF0EB;border:1.5px solid #C8502A;border-radius:10px;padding:10px 16px;"><span style="font-size:.84rem;font-weight:700;color:#C8502A;">❌ Gagal: {str(e_up)[:80]}</span></div>', unsafe_allow_html=True)
 
-        if analisis_reviews:
-            st.session_state["_pending_reviews"] = analisis_reviews
-        if analisis_nama.strip():
-            st.session_state["_pending_nama"] = analisis_nama.strip()
-
-        if btn_analisis and analisis_nama.strip() and analisis_reviews and _engine_available:
-            st.session_state["analisis_processing"] = True
-            st.session_state["analisis_error"]      = ""
-            st.session_state["_nav_to_analisis"]    = True
-            st.rerun()
-
-        if st.session_state.get("_nav_to_analisis", False) and st.session_state.get("analisis_processing", False):
-            st.session_state.pop("_nav_to_analisis", None)
-            try:
-                result = run_analysis_optimized(
-                    st.session_state.get("_pending_reviews", []),
-                    st.session_state.get("_pending_nama", "")
+            if analisis_reviews and len(analisis_reviews) > MAX_REVIEW_BATCH:
+                st.markdown(
+                    f'<div style="background:#FFFBEB;border:1.5px solid #F59E0B;border-radius:10px;'
+                    f'padding:8px 14px;margin-top:6px;">'
+                    f'<span style="font-size:.84rem;color:#B8730A;">⚡ <b>{len(analisis_reviews)} review</b> terdeteksi. '
+                    f'Hanya <b>{MAX_REVIEW_BATCH} review pertama</b> yang dianalisis untuk menjaga performa.</span></div>',
+                    unsafe_allow_html=True
                 )
-                st.session_state["analisis_result"]     = result
-                st.session_state["analisis_processing"] = False
-                st.switch_page("pages/hasilanalisis.py")
-            except Exception as e_proc:
-                st.session_state["analisis_processing"] = False
-                err_msg = str(e_proc)
-                if "No module named" in err_msg:
-                    err_msg = "Modul analisis tidak ditemukan."
-                st.session_state["analisis_error"] = err_msg[:400]
-                st.rerun()
+
+            if st.session_state.get("analisis_error"):
+                st.markdown(f'<div style="background:#FFF0EB;border:2px solid #C8502A;border-radius:12px;padding:14px 18px;margin-top:8px;"><span style="font-size:.84rem;font-weight:700;color:#C8502A;">❌ Error:</span><br><span style="font-size:.84rem;color:#78716C;">{st.session_state["analisis_error"]}</span></div>', unsafe_allow_html=True)
+                _, col_retry = st.columns([7, 2])
+                with col_retry:
+                    if st.button("🔄 Coba Lagi", key="btn_analisis_retry"):
+                        st.session_state["analisis_error"] = ""
+                        st.rerun(scope="fragment")
+
+            st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+            btn_disabled = (not bool(analisis_nama.strip()) or not bool(analisis_reviews) or
+                            st.session_state.get("analisis_processing", False) or not _engine_available)
+            col_btn_an, col_hint_an = st.columns([2, 5])
+            with col_btn_an:
+                btn_label    = "⏳ Sedang Diproses..." if st.session_state.get("analisis_processing") else "📊 Analisis Sekarang"
+                btn_analisis = st.button(btn_label, key="btn_analisis_main",
+                                         disabled=btn_disabled, use_container_width=True)
+            with col_hint_an:
+                if not _engine_available:
+                    st.markdown('<span style="font-size:.84rem;color:#C8502A;">← absa_engine tidak tersedia</span>', unsafe_allow_html=True)
+                elif not analisis_nama.strip():
+                    st.markdown('<span style="font-size:.84rem;color:#bbb;">← Isi nama kafe dulu</span>', unsafe_allow_html=True)
+                elif not analisis_reviews:
+                    st.markdown('<span style="font-size:.84rem;color:#bbb;">← Masukkan review dulu</span>', unsafe_allow_html=True)
+                else:
+                    n_uniq = min(len(set(r.strip() for r in analisis_reviews if r.strip())), MAX_REVIEW_BATCH)
+                    st.markdown(f'<span style="font-size:.84rem;color:#78716C;">← {n_uniq} review unik akan dianalisis</span>', unsafe_allow_html=True)
+
+            if analisis_reviews:
+                st.session_state["_pending_reviews"] = analisis_reviews
+            if analisis_nama.strip():
+                st.session_state["_pending_nama"] = analisis_nama.strip()
+
+            if btn_analisis and analisis_nama.strip() and analisis_reviews and _engine_available:
+                st.session_state["analisis_processing"] = True
+                st.session_state["analisis_error"]      = ""
+                st.session_state["_nav_to_analisis"]    = True
+                st.rerun(scope="fragment")
+
+            if st.session_state.get("_nav_to_analisis", False) and st.session_state.get("analisis_processing", False):
+                st.session_state.pop("_nav_to_analisis", None)
+                try:
+                    result = run_analysis_optimized(
+                        st.session_state.get("_pending_reviews", []),
+                        st.session_state.get("_pending_nama", "")
+                    )
+                    st.session_state["analisis_result"]     = result
+                    st.session_state["analisis_processing"] = False
+                    st.switch_page("pages/hasilanalisis.py")
+                except Exception as e_proc:
+                    st.session_state["analisis_processing"] = False
+                    err_msg = str(e_proc)
+                    if "No module named" in err_msg:
+                        err_msg = "Modul analisis tidak ditemukan."
+                    st.session_state["analisis_error"] = err_msg[:400]
+                    st.rerun(scope="fragment")
+
+_render_analisis_section()
 
 # ════════════════════════════════════════════════════════════════
 # FOOTER
