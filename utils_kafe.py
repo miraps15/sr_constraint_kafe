@@ -450,53 +450,45 @@ def compute_best_per_category_imdb(dataframe: pd.DataFrame) -> pd.DataFrame:
 
 def precompute_top5_conditions_imdb(dataframe: pd.DataFrame) -> dict:
     """
-    [PATCH-1] Versi optimasi:
-    - Hitung WR sekali untuk semua (kid, kondisi) menggunakan groupby vectorized
-    - Hindari nested Python loop O(kids × cats × conds)
-    - Hasil sama persis, tapi jauh lebih cepat
+    Versi hemat memory: simpan list of tuple, bukan DataFrame.
+    Key: (kid, cat) → list of (aspect_condition, sentimen_pct)
     """
     import pandas as _pd
-    import numpy as _np
- 
+
     if dataframe.empty:
         return {}
- 
+
     C = compute_global_C(dataframe)
- 
-    # Hitung v dan R per (kafe_id, aspect_condition) sekaligus
+    m = M_IMDB
+
+    # Hitung WR vectorized sekali
     grp = dataframe.groupby(["kafe_id", "aspect_condition"])
     stats = _pd.concat([
         grp["skor_sentimen"].mean().rename("R"),
         grp["skor_sentimen"].count().rename("v"),
     ], axis=1).reset_index()
- 
-    # Hitung WR vectorized
-    m = M_IMDB
+
     stats["WR"] = (stats["v"] / (m + stats["v"])) * stats["R"] + \
                   (m / (m + stats["v"])) * C
     stats["sentimen_pct"] = (stats["WR"] * 100).round(1)
- 
-    # Merge category info
+
+    # Merge category
     cat_map = (
         dataframe[["aspect_condition", "category_aspect_kafe"]]
         .drop_duplicates()
     )
     stats = stats.merge(cat_map, on="aspect_condition", how="left")
- 
+
     result = {}
-    # Groupby (kid, cat) lalu ambil top5 — pandas native, jauh lebih cepat
     for (kid, cat), grp_df in stats.groupby(["kafe_id", "category_aspect_kafe"]):
         top5 = (
-            grp_df[["aspect_condition", "WR", "sentimen_pct"]]
-            .sort_values("WR", ascending=False)
-            .head(5)
-            .reset_index(drop=True)
+            grp_df.nlargest(5, "WR")[["aspect_condition", "sentimen_pct"]]
+            .values.tolist()  # simpan sebagai list of list, BUKAN DataFrame
         )
-        if not top5.empty:
-            result[(kid, cat)] = top5
- 
-    return result
+        if top5:
+            result[(kid, cat)] = top5  # [(cond, pct), ...]
 
+    return result
 
 # ─── KASUS A: skor keseluruhan satu kafe ──────────────────────
 def compute_overall_score_imdb_kasus_a(dataframe: pd.DataFrame,
