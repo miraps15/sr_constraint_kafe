@@ -352,7 +352,7 @@ class SentimentModel(nn.Module):
 # Cache global untuk Colab (tanpa @st.cache_resource agar tidak konflik)
 _glove_cache = None
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(show_spinner=True)
 def load_glove(dim: int = 300):
     """
     Load GloVe embeddings.
