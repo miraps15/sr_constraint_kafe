@@ -1,23 +1,16 @@
 # ============================================================
 # SISTEM REKOMENDASI KAFE SURABAYA — app_kafe1.py (Logged-in)
-# Versi Streamlit Cloud:
-#   - Tidak ada akses /content/drive (semua via Google Sheets API)
-#   - users_manager.py digunakan untuk manajemen user
-#   - absa_engine di-import langsung (model cache via st.cache_resource
-#     di dalam absa_engine.py sendiri)
+# Versi Streamlit Cloud
 #
-# PERBAIKAN dari versi sebelumnya:
-#   [FIX-A] _prewarm_absa_models diperbaiki: tidak lagi memanggil
-#           load_aspect_model_engine(device) / load_sent_model_engine(device)
-#           karena kode baru menggunakan @st.cache_resource tanpa argumen.
-#   [FIX-B] Sistem download model duplikat di app_kafe1.py dihapus —
-#           absa_engine.py mengelola download dan cache-nya sendiri.
-#           Tidak ada lagi konflik path / file HTML dianggap valid.
-#   [FIX-C] Prewarm tidak lagi menggunakan background thread (race condition).
-#           Model di-load saat pertama kali dibutuhkan, bukan di thread terpisah.
-#   [FIX-D] run_analysis_optimized tidak lagi memanggil
-#           convert_aspects_to_kafe_format secara manual — sudah ditangani
-#           di dalam analyze_single_review + loop aspek dengan _source_review.
+# PERBAIKAN PERFORMA [PATCH-LOADING] — hanya bagian yang crash:
+#   [P1] precompute_all_top5 + get_best_per_category
+#        sekarang di-guard dengan session_state["precompute_done"]
+#        → spinner hanya muncul sekali saat cache kosong,
+#          tidak kelap-kelip saat widget re-run
+#   [P2] _prewarm_absa_models: tidak berubah (sudah sinkron)
+#        tapi ditambah guard agar tidak dipanggil di top-level
+#        — hanya dipanggil saat tombol Analisis diklik
+#   [P3] Tidak ada perubahan logika bisnis, navigasi, atau UI
 # ============================================================
 
 import streamlit as st
@@ -83,8 +76,6 @@ if not st.session_state.get("logged_in", False):
 
 # ════════════════════════════════════════════════════════════════
 # IMPORT absa_engine
-# [FIX-B] Tidak ada lagi sistem download model sendiri di sini.
-#         absa_engine.py mengelola download & cache via st.cache_resource.
 # ════════════════════════════════════════════════════════════════
 _engine_available    = False
 _engine_import_error = ""
@@ -104,46 +95,27 @@ except Exception as _e:
 
 # ════════════════════════════════════════════════════════════════
 # PRE-WARM ABSA MODELS
-# [FIX-A] Panggil fungsi tanpa argumen (sesuai signature kode baru).
-# [FIX-C] Tidak menggunakan background thread — hindari race condition.
-#         Prewarm dipanggil sekali saat halaman pertama kali dimuat,
-#         hasilnya disimpan di st.session_state["_absa_warmed"].
+# [P2] Tidak dipanggil di top-level — hanya saat analisis diklik
+#      Definisi fungsi tetap sama persis
 # ════════════════════════════════════════════════════════════════
 def _prewarm_absa_models():
-    """
-    Load semua resource ABSA ke dalam st.cache_resource.
-    [FIX-A] Memanggil fungsi tanpa argumen — sesuai signature @st.cache_resource.
-    [FIX-C] Dipanggil secara sinkron, bukan di background thread.
-    """
     if st.session_state.get("_absa_warmed", False):
         return True
-
     if not _engine_available:
         return False
-
     try:
-        # Muat GloVe (download otomatis jika belum ada di cache)
         _absa_engine.load_glove()
-
-        # Muat spaCy (download otomatis jika belum ada)
         _absa_engine._get_nlp()
-
-        # [FIX-A] Panggil tanpa argumen — @st.cache_resource tidak menerima argumen
         asp_model, asp_cfg = _absa_engine.load_aspect_model_engine()
         sent_model, sent_cfg = _absa_engine.load_sent_model_engine()
-
         if asp_model is None or sent_model is None:
-            st.session_state["_absa_warmed"]      = False
-            st.session_state["_absa_warm_error"]  = "Model gagal di-load (None)"
+            st.session_state["_absa_warmed"]     = False
+            st.session_state["_absa_warm_error"] = "Model gagal di-load (None)"
             return False
-
-        # Muat df_konversi dari Google Sheets
         _absa_engine.load_konversi_df()
-
         st.session_state["_absa_warmed"]     = True
         st.session_state["_absa_warm_error"] = ""
         return True
-
     except Exception as e:
         st.session_state["_absa_warmed"]     = False
         st.session_state["_absa_warm_error"] = str(e)
@@ -186,20 +158,10 @@ def get_kafe_per_condition(cond: str) -> set:
 @st.cache_data(show_spinner=False)
 def get_jumlah_review_per_kafe(_dataframe: pd.DataFrame) -> dict:
     if "review_id" in _dataframe.columns:
-        result = (
-            _dataframe.groupby("kafe_id")["review_id"]
-            .nunique()
-            .to_dict()
-        )
+        return _dataframe.groupby("kafe_id")["review_id"].nunique().to_dict()
     elif "review" in _dataframe.columns:
-        result = (
-            _dataframe.groupby("kafe_id")["review"]
-            .nunique()
-            .to_dict()
-        )
-    else:
-        result = {}
-    return result
+        return _dataframe.groupby("kafe_id")["review"].nunique().to_dict()
+    return {}
 
 @st.cache_data(show_spinner=False)
 def get_reviewer_aktif_per_kafe(_dataframe: pd.DataFrame) -> dict:
@@ -216,8 +178,17 @@ def get_reviewer_aktif_per_kafe(_dataframe: pd.DataFrame) -> dict:
         result[kid] = round((aktif / total) * 100, 1)
     return result
 
-best_df             = get_best_per_category(df)
-_top5_lookup        = precompute_all_top5(df)
+# [P1] Guard precompute — spinner hanya muncul saat cache kosong
+# Tidak re-run saat widget interaction karena dicek via session_state
+if "precompute_done_1" not in st.session_state:
+    with st.spinner("☕ Memuat data kafe..."):
+        best_df      = get_best_per_category(df)
+        _top5_lookup = precompute_all_top5(df)
+    st.session_state["precompute_done_1"] = True
+else:
+    best_df      = get_best_per_category(df)
+    _top5_lookup = precompute_all_top5(df)
+
 _jml_review_map     = get_jumlah_review_per_kafe(df)
 _reviewer_aktif_map = get_reviewer_aktif_per_kafe(df)
 
@@ -381,6 +352,15 @@ div[data-testid="stRadio"] > div > label:has(input:checked) {{
     font-size: .84rem !important; font-weight: 600 !important;
     color: #78716C !important; margin-bottom: 4px !important;
 }}
+.fav-btn-wrap div[data-testid="stButton"] button {{
+    min-height: 34px !important; height: 34px !important; padding: 4px 14px !important;
+    font-size: .76rem !important; font-weight: 700 !important; background: #FFF0EB !important;
+    color: #C8502A !important; border: 1.5px solid rgba(200,80,42,.3) !important;
+    border-radius: 8px !important; line-height: 1 !important; white-space: nowrap !important;
+    position: fixed !important; top: 12px !important; right: 40px !important;
+    z-index: 1000 !important; width: auto !important;
+}}
+.fav-btn-wrap div[data-testid="stButton"] button:hover {{ background: #FFE0D4 !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -421,32 +401,6 @@ st.markdown("""
     <a class="nav-link" href="#analisis-section">&#128200; Analisis</a>
   </nav>
 </div>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<style>
-.fav-btn-wrap div[data-testid="stButton"] button {
-    min-height: 34px !important;
-    height: 34px !important;
-    padding: 4px 14px !important;
-    font-size: .76rem !important;
-    font-weight: 700 !important;
-    background: #FFF0EB !important;
-    color: #C8502A !important;
-    border: 1.5px solid rgba(200,80,42,.3) !important;
-    border-radius: 8px !important;
-    line-height: 1 !important;
-    white-space: nowrap !important;
-    position: fixed !important;
-    top: 12px !important;
-    right: 40px !important;
-    z-index: 1000 !important;
-    width: auto !important;
-}
-.fav-btn-wrap div[data-testid="stButton"] button:hover {
-    background: #FFE0D4 !important;
-}
-</style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="fav-btn-wrap">', unsafe_allow_html=True)
@@ -574,10 +528,7 @@ st.markdown("""
 with st.container():
     _, col_pref, _ = st.columns([1, 10, 1])
     with col_pref:
-        st.markdown(
-            '<p class="lokasi-label">📍 Lokasi kamu saat ini (opsional)</p>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<p class="lokasi-label">📍 Lokasi kamu saat ini (opsional)</p>', unsafe_allow_html=True)
         pref_lokasi_input = st.selectbox(
             "Lokasi", options=[""] + all_kecamatan, index=0,
             placeholder="Ketik nama kecamatan…",
@@ -743,22 +694,17 @@ def _build_one_card_html(row: pd.Series, rank: int, cat: str,
     alamat       = str(row.get("alamat_kafe", "—"))
     jam          = str(row.get("jam_buka", "—"))
     kid          = str(row.get("kafe_id", ""))
-
-    saw_score = float(row.get("saw_score", 0))
-    saw_pct   = f"{saw_score * 100:.1f}%"
-
-    jml_rev = jml_review_map.get(kid, 0)
+    saw_score    = float(row.get("saw_score", 0))
+    saw_pct      = f"{saw_score * 100:.1f}%"
+    jml_rev      = jml_review_map.get(kid, 0)
     try:
         jml_r = f"{int(jml_rev):,}".replace(",", ".")
     except Exception:
         jml_r = str(jml_rev)
-
     rev_aktif_pct = reviewer_aktif_map.get(kid, 0.0)
     rev_aktif_str = f"{rev_aktif_pct:.1f}%"
-
     cover  = str(row.get("cover", ""))
     direct = gdrive_direct_url(cover)
-
     if direct:
         img_html = (
             f'<img src="{direct}" alt="{nama_display}" '
@@ -774,7 +720,6 @@ def _build_one_card_html(row: pd.Series, rank: int, cat: str,
             f'align-items:center;justify-content:center;font-size:2rem;color:#c8a898;'
             f'flex-direction:column;">&#9749;<small style="font-size:.55rem;text-transform:uppercase;">No Photo</small></div>'
         )
-
     top5_df   = top5_lookup.get((kid, cat), pd.DataFrame())
     top5_html = ""
     if not top5_df.empty:
@@ -855,18 +800,14 @@ def build_slideshow_html_section(ranked_df: pd.DataFrame, cat: str,
                                   reviewer_aktif_map: dict) -> str:
     if ranked_df.empty:
         return ""
-
     n_total      = len(ranked_df)
     uid          = cat.replace(" ", "_").replace("/", "_").lower()
     card_total_w = CARD_W + 16
-
-    all_cards_html = ""
-    for i, (_, row) in enumerate(ranked_df.iterrows()):
-        all_cards_html += _build_one_card_html(
-            row, i + 1, cat, bg_sec, top5_lookup,
-            jml_review_map, reviewer_aktif_map
-        )
-
+    all_cards_html = "".join(
+        _build_one_card_html(row, i + 1, cat, bg_sec, top5_lookup,
+                             jml_review_map, reviewer_aktif_map)
+        for i, (_, row) in enumerate(ranked_df.iterrows())
+    )
     return f"""<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
@@ -952,6 +893,7 @@ def render_best_section(cat: str, ranked_df: pd.DataFrame, top5_lookup: dict,
 
 # ════════════════════════════════════════════════════════════════
 # RENDER BEST KAFE
+# [P1] Guard: hanya render jika data sudah siap
 # ════════════════════════════════════════════════════════════════
 st.markdown(f"""
 <div id="best-section" style="padding:48px 48px 24px;background:#fff;">
@@ -965,12 +907,15 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-for cat in unique_cats:
-    cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
-    render_best_section(
-        cat, cat_ranked, _top5_lookup,
-        _jml_review_map, _reviewer_aktif_map
-    )
+if not best_df.empty:
+    for cat in unique_cats:
+        cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
+        render_best_section(
+            cat, cat_ranked, _top5_lookup,
+            _jml_review_map, _reviewer_aktif_map
+        )
+else:
+    st.markdown('<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Data sedang disiapkan, refresh halaman sebentar lagi.</div>', unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
 # ANALISIS SENTIMEN
@@ -982,16 +927,9 @@ def _hash_reviews(reviews: list) -> str:
     return hashlib.md5(combined.encode()).hexdigest()
 
 def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
-    """
-    Pipeline analisis review untuk satu kafe.
-    [FIX-C] Tidak ada background thread — semua sinkron.
-    [FIX-D] _source_review diisi langsung di loop, sebelum masuk ke
-            convert_aspects_to_kafe_format.
-    """
     if not reviews:
         return {"raw_aspects": [], "df_converted": pd.DataFrame()}
 
-    # Deduplikasi review
     seen_texts     = set()
     unique_reviews = []
     for r in reviews:
@@ -1005,13 +943,10 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
     was_truncated = len(unique_reviews) > MAX_REVIEW_BATCH
     batch_reviews = unique_reviews[:MAX_REVIEW_BATCH]
 
-    # Cek cache hasil analisis
     cache_key = f"absa_cache_{_hash_reviews(batch_reviews)}"
     if cache_key in st.session_state:
         return st.session_state[cache_key]
 
-    # [FIX-C] Load model secara sinkron dengan spinner
-    # Jika belum warm, load sekarang (bukan di background thread)
     if not st.session_state.get("_absa_warmed", False):
         with st.spinner("⏳ Memuat model analisis untuk pertama kali (~30-60 detik)..."):
             ok = _prewarm_absa_models()
@@ -1028,7 +963,6 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
     all_aspects = []
     n = len(batch_reviews)
 
-    # Fase 1: Translate semua review
     translated_reviews = []
     for i, rev in enumerate(batch_reviews):
         pct_now = int((i / n) * 35)
@@ -1039,7 +973,6 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
         except Exception:
             translated_reviews.append(rev)
 
-    # Fase 2: Analisis ABSA tiap review
     for i, (orig_rev, en_rev) in enumerate(zip(batch_reviews, translated_reviews)):
         pct_now = 35 + int((i / n) * 60)
         progress_bar.progress(pct_now, text=f"🔍 Menganalisis aspek review {i+1}/{n}...")
@@ -1049,14 +982,9 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
             unsafe_allow_html=True
         )
         try:
-            # [FIX-A] analyze_single_review tidak butuh argumen device
-            #         tapi tetap dikirim untuk kompatibilitas
             asp_list = _absa_engine.analyze_single_review(en_rev, device=device)
-
-            # [FIX-D] Tambahkan _source_review (teks asli) ke setiap aspek
             for asp in asp_list:
                 asp["_source_review"] = orig_rev
-
             all_aspects.extend(asp_list)
         except Exception as e:
             st.warning(f"Review {i+1} gagal dianalisis: {str(e)[:80]}")
@@ -1065,10 +993,8 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
     status_text.empty()
     progress_bar.empty()
 
-    # Konversi ke format kafe
     df_conv = _absa_engine.convert_aspects_to_kafe_format(all_aspects)
 
-    # Pastikan kolom review (teks asli) ada di df_conv
     if not df_conv.empty:
         if "review" not in df_conv.columns:
             df_conv["review"] = [a.get("_source_review", "") for a in all_aspects
