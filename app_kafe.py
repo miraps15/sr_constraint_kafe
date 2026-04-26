@@ -292,6 +292,155 @@ if st.session_state.get("_nav_to_detail"):
     st.switch_page("pages/skemacari1.py")
 
 # ════════════════════════════════════════════════════════════════
+# LOGIN SECTION — definisi fragment dipindah ke sini agar tidak error
+# ════════════════════════════════════════════════════════════════
+@st.fragment
+def _render_login_section():
+    st.markdown('<div id="login-anchor"></div>', unsafe_allow_html=True)
+    st.markdown("""
+<div style="background:linear-gradient(160deg,#2d1a0e,#1C1917);padding:56px 48px 48px;text-align:center;">
+  <div style="max-width:440px;margin:0 auto;">
+    <div style="font-size:2.6rem;margin-bottom:12px;">&#9749;</div>
+    <div style="font-family:'Fraunces',serif;font-size:2rem;font-weight:900;color:#fff;margin-bottom:8px;">Masuk Dulu, Yuk!</div>
+    <p style="font-size:.88rem;color:rgba(255,255,255,.65);margin-bottom:0;line-height:1.7;">Simpan kafe favorit dan coba fitur analisis sentimen.</p>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown('<div id="login-section-light">', unsafe_allow_html=True)
+    _, col_login, _ = st.columns([1, 2, 1])
+    with col_login:
+        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+        with st.form("login_form", clear_on_submit=False):
+            st.markdown('<p style="color:#1C1917;font-size:.78rem;font-weight:600;letter-spacing:.4px;margin-bottom:2px;">USERNAME</p>', unsafe_allow_html=True)
+            login_username = st.text_input("Username", placeholder="Masukkan username kamu", label_visibility="collapsed")
+            st.markdown('<p style="color:#1C1917;font-size:.78rem;font-weight:600;letter-spacing:.4px;margin-bottom:2px;margin-top:10px;">PASSWORD</p>', unsafe_allow_html=True)
+            login_password = st.text_input("Password", placeholder="Masukkan password kamu", type="password", label_visibility="collapsed")
+            if st.session_state.get("login_error", ""):
+                st.markdown(f'<div class="error-msg">⚠️ {st.session_state["login_error"]}</div>', unsafe_allow_html=True)
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+            btn_masuk = st.form_submit_button("Masuk Sekarang →", use_container_width=True)
+
+        st.markdown('<div style="display:flex;align-items:center;gap:12px;margin:14px 0;"><div style="flex:1;height:1px;background:#E8DDD5;"></div><span style="color:#999;font-size:.74rem;">atau</span><div style="flex:1;height:1px;background:#E8DDD5;"></div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="google-btn">', unsafe_allow_html=True)
+        btn_google = st.button("🔑 Lanjut dengan Google", key="btn_google_login", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center;padding:14px 0 4px;"><span style="font-size:.80rem;color:#999;">Belum punya akun?</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="daftar-btn">', unsafe_allow_html=True)
+        btn_daftar_link = st.button("📝 Daftar Gratis", key="btn_daftar_link", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("<div style='height:32px'></div>", unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if btn_masuk:
+        uname = login_username.strip()
+        pwd   = login_password.strip()
+        if not uname or not pwd:
+            st.session_state["login_error"] = "Username dan password tidak boleh kosong."
+            st.rerun(scope="fragment")
+        elif check_login(uname, pwd):
+            st.session_state.update({"login_error": "", "logged_in": True,
+                                      "login_username": uname, "login_google": ""})
+            st.switch_page("pages/app_kafe1.py")
+        else:
+            st.session_state["login_error"] = "Username atau password salah."
+            st.rerun(scope="fragment")
+
+    if btn_google:
+        st.session_state["show_google_popup"] = True
+        st.rerun(scope="fragment")
+    if btn_daftar_link:
+        st.session_state["show_daftar_popup"] = True
+        st.rerun(scope="fragment")
+
+    # Popup Google
+    if st.session_state.get("show_google_popup", False):
+        google_accounts = get_google_accounts()
+        _, col_gpop, _ = st.columns([1, 4, 1])
+        with col_gpop:
+            st.markdown('<div style="background:#FFF8F3;border:2px solid #E8DDD5;border-radius:16px;padding:20px 24px;margin:16px 0;"><div style="font-family:Fraunces,serif;font-size:1.1rem;font-weight:800;color:#1C1917;margin-bottom:12px;">🔑 Pilih Akun Google</div>', unsafe_allow_html=True)
+            if not google_accounts:
+                st.markdown('<div style="background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;padding:10px 14px;font-size:.82rem;color:#B8730A;margin-bottom:12px;">ℹ️ Belum ada akun Google yang terdaftar. Masukkan email Google kamu untuk melanjutkan.</div>', unsafe_allow_html=True)
+                with st.form("google_manual_form", clear_on_submit=True):
+                    g_email_input = st.text_input("Email Google", placeholder="contoh@gmail.com", key="google_email_manual_input")
+                    col_ok, col_batal = st.columns([3, 2])
+                    with col_ok:
+                        btn_google_manual = st.form_submit_button("✅ Lanjutkan", use_container_width=True)
+                    with col_batal:
+                        btn_google_cancel = st.form_submit_button("✕ Batal", use_container_width=True)
+                if btn_google_manual and g_email_input.strip():
+                    g_acc     = g_email_input.strip()
+                    disp_name = ensure_google_user(g_acc)
+                    st.session_state.update({"show_google_popup": False, "logged_in": True,
+                                              "login_username": disp_name, "login_google": g_acc})
+                    st.switch_page("pages/app_kafe1.py")
+                elif btn_google_cancel:
+                    st.session_state["show_google_popup"] = False
+                    st.rerun(scope="fragment")
+            else:
+                for g_acc in google_accounts:
+                    c1, c2 = st.columns([5, 2])
+                    with c1:
+                        st.markdown(f'<div style="padding:10px 14px;background:#fff;border:1.5px solid #E8DDD5;border-radius:10px;font-size:.85rem;color:#1C1917;">📧 {g_acc}</div>', unsafe_allow_html=True)
+                    with c2:
+                        if st.button("Pilih", key=f"btn_gpick_{g_acc}", use_container_width=True):
+                            disp_name = ensure_google_user(g_acc)
+                            st.session_state.update({"show_google_popup": False, "logged_in": True,
+                                                      "login_username": disp_name, "login_google": g_acc})
+                            st.switch_page("pages/app_kafe1.py")
+                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+                with st.expander("➕ Gunakan akun Google lain", expanded=False):
+                    with st.form("google_new_form", clear_on_submit=True):
+                        g_new_input    = st.text_input("Email Google baru", placeholder="contoh@gmail.com", key="google_new_email_input")
+                        btn_add_google = st.form_submit_button("✅ Lanjutkan", use_container_width=True)
+                    if btn_add_google and g_new_input.strip():
+                        g_acc     = g_new_input.strip()
+                        disp_name = ensure_google_user(g_acc)
+                        st.session_state.update({"show_google_popup": False, "logged_in": True,
+                                                  "login_username": disp_name, "login_google": g_acc})
+                        st.switch_page("pages/app_kafe1.py")
+                if st.button("✕ Batal", key="btn_close_google_popup", use_container_width=True):
+                    st.session_state["show_google_popup"] = False
+                    st.rerun(scope="fragment")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    # Popup Daftar
+    if st.session_state.get("show_daftar_popup", False):
+        _, col_dpop, _ = st.columns([1, 4, 1])
+        with col_dpop:
+            st.markdown('<div style="background:#fff;border:2px solid #C8502A;border-radius:16px;padding:24px 28px;margin:16px 0;"><div style="font-family:Fraunces,serif;font-size:1.1rem;font-weight:800;color:#1C1917;margin-bottom:12px;">📝 Daftar Akun Baru</div>', unsafe_allow_html=True)
+            with st.form("daftar_form", clear_on_submit=False):
+                d_email = st.text_input("Email", placeholder="Email aktif kamu", key="daftar_email_input")
+                d_uname = st.text_input("Username", placeholder="Pilih username unik", key="daftar_username_input")
+                d_pwd   = st.text_input("Password", placeholder="Buat password kuat", type="password", key="daftar_password_input")
+                if st.session_state.get("daftar_error", ""):
+                    st.markdown(f'<div style="background:#FFF0EB;border:1px solid #C8502A;border-radius:8px;padding:8px 14px;font-size:.82rem;color:#C8502A;">⚠️ {st.session_state["daftar_error"]}</div>', unsafe_allow_html=True)
+                c_daftar, c_tutup = st.columns([3, 2])
+                with c_daftar:
+                    btn_daftar_submit = st.form_submit_button("✅ Daftar Sekarang", use_container_width=True)
+                with c_tutup:
+                    btn_daftar_tutup = st.form_submit_button("✕ Tutup", use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            if btn_daftar_tutup:
+                st.session_state.update({"show_daftar_popup": False, "daftar_error": ""})
+                st.rerun(scope="fragment")
+            if btn_daftar_submit:
+                if not d_email.strip() or not d_uname.strip() or not d_pwd.strip():
+                    st.session_state["daftar_error"] = "Semua field harus diisi."
+                    st.rerun(scope="fragment")
+                else:
+                    ok, msg = upsert_user(email=d_email.strip(), username=d_uname.strip(), password=d_pwd.strip())
+                    if ok:
+                        st.session_state.update({"daftar_error": "", "show_daftar_popup": False,
+                                                 "logged_in": True, "login_username": d_uname.strip(),
+                                                 "login_google": ""})
+                        st.switch_page("pages/app_kafe1.py")
+                    else:
+                        st.session_state["daftar_error"] = msg
+                        st.rerun(scope="fragment")
+                        
+# ════════════════════════════════════════════════════════════════
 # NAVBAR
 # ════════════════════════════════════════════════════════════════
 st.markdown("""
@@ -881,152 +1030,6 @@ st.markdown("""
 # ════════════════════════════════════════════════════════════════
 # LOGIN SECTION
 # ════════════════════════════════════════════════════════════════
-@st.fragment
-def _render_login_section():
-    st.markdown('<div id="login-anchor"></div>', unsafe_allow_html=True)
-    st.markdown("""
-<div style="background:linear-gradient(160deg,#2d1a0e,#1C1917);padding:56px 48px 48px;text-align:center;">
-  <div style="max-width:440px;margin:0 auto;">
-    <div style="font-size:2.6rem;margin-bottom:12px;">&#9749;</div>
-    <div style="font-family:'Fraunces',serif;font-size:2rem;font-weight:900;color:#fff;margin-bottom:8px;">Masuk Dulu, Yuk!</div>
-    <p style="font-size:.88rem;color:rgba(255,255,255,.65);margin-bottom:0;line-height:1.7;">Simpan kafe favorit dan coba fitur analisis sentimen.</p>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-    st.markdown('<div id="login-section-light">', unsafe_allow_html=True)
-    _, col_login, _ = st.columns([1, 2, 1])
-    with col_login:
-        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-        with st.form("login_form", clear_on_submit=False):
-            st.markdown('<p style="color:#1C1917;font-size:.78rem;font-weight:600;letter-spacing:.4px;margin-bottom:2px;">USERNAME</p>', unsafe_allow_html=True)
-            login_username = st.text_input("Username", placeholder="Masukkan username kamu", label_visibility="collapsed")
-            st.markdown('<p style="color:#1C1917;font-size:.78rem;font-weight:600;letter-spacing:.4px;margin-bottom:2px;margin-top:10px;">PASSWORD</p>', unsafe_allow_html=True)
-            login_password = st.text_input("Password", placeholder="Masukkan password kamu", type="password", label_visibility="collapsed")
-            if st.session_state.get("login_error", ""):
-                st.markdown(f'<div class="error-msg">⚠️ {st.session_state["login_error"]}</div>', unsafe_allow_html=True)
-            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-            btn_masuk = st.form_submit_button("Masuk Sekarang →", use_container_width=True)
-
-        st.markdown('<div style="display:flex;align-items:center;gap:12px;margin:14px 0;"><div style="flex:1;height:1px;background:#E8DDD5;"></div><span style="color:#999;font-size:.74rem;">atau</span><div style="flex:1;height:1px;background:#E8DDD5;"></div></div>', unsafe_allow_html=True)
-        st.markdown('<div class="google-btn">', unsafe_allow_html=True)
-        btn_google = st.button("🔑 Lanjut dengan Google", key="btn_google_login", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('<div style="text-align:center;padding:14px 0 4px;"><span style="font-size:.80rem;color:#999;">Belum punya akun?</span></div>', unsafe_allow_html=True)
-        st.markdown('<div class="daftar-btn">', unsafe_allow_html=True)
-        btn_daftar_link = st.button("📝 Daftar Gratis", key="btn_daftar_link", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown("<div style='height:32px'></div>", unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    if btn_masuk:
-        uname = login_username.strip()
-        pwd   = login_password.strip()
-        if not uname or not pwd:
-            st.session_state["login_error"] = "Username dan password tidak boleh kosong."
-            st.rerun(scope="fragment")
-        elif check_login(uname, pwd):
-            st.session_state.update({"login_error": "", "logged_in": True,
-                                      "login_username": uname, "login_google": ""})
-            st.switch_page("pages/app_kafe1.py")
-        else:
-            st.session_state["login_error"] = "Username atau password salah."
-            st.rerun(scope="fragment")
-
-    if btn_google:
-        st.session_state["show_google_popup"] = True
-        st.rerun(scope="fragment")
-    if btn_daftar_link:
-        st.session_state["show_daftar_popup"] = True
-        st.rerun(scope="fragment")
-
-    # Popup Google
-    if st.session_state.get("show_google_popup", False):
-        google_accounts = get_google_accounts()
-        _, col_gpop, _ = st.columns([1, 4, 1])
-        with col_gpop:
-            st.markdown('<div style="background:#FFF8F3;border:2px solid #E8DDD5;border-radius:16px;padding:20px 24px;margin:16px 0;"><div style="font-family:Fraunces,serif;font-size:1.1rem;font-weight:800;color:#1C1917;margin-bottom:12px;">🔑 Pilih Akun Google</div>', unsafe_allow_html=True)
-            if not google_accounts:
-                st.markdown('<div style="background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;padding:10px 14px;font-size:.82rem;color:#B8730A;margin-bottom:12px;">ℹ️ Belum ada akun Google yang terdaftar. Masukkan email Google kamu untuk melanjutkan.</div>', unsafe_allow_html=True)
-                with st.form("google_manual_form", clear_on_submit=True):
-                    g_email_input = st.text_input("Email Google", placeholder="contoh@gmail.com", key="google_email_manual_input")
-                    col_ok, col_batal = st.columns([3, 2])
-                    with col_ok:
-                        btn_google_manual = st.form_submit_button("✅ Lanjutkan", use_container_width=True)
-                    with col_batal:
-                        btn_google_cancel = st.form_submit_button("✕ Batal", use_container_width=True)
-                if btn_google_manual and g_email_input.strip():
-                    g_acc     = g_email_input.strip()
-                    disp_name = ensure_google_user(g_acc)
-                    st.session_state.update({"show_google_popup": False, "logged_in": True,
-                                              "login_username": disp_name, "login_google": g_acc})
-                    st.switch_page("pages/app_kafe1.py")
-                elif btn_google_cancel:
-                    st.session_state["show_google_popup"] = False
-                    st.rerun(scope="fragment")
-            else:
-                for g_acc in google_accounts:
-                    c1, c2 = st.columns([5, 2])
-                    with c1:
-                        st.markdown(f'<div style="padding:10px 14px;background:#fff;border:1.5px solid #E8DDD5;border-radius:10px;font-size:.85rem;color:#1C1917;">📧 {g_acc}</div>', unsafe_allow_html=True)
-                    with c2:
-                        if st.button("Pilih", key=f"btn_gpick_{g_acc}", use_container_width=True):
-                            disp_name = ensure_google_user(g_acc)
-                            st.session_state.update({"show_google_popup": False, "logged_in": True,
-                                                      "login_username": disp_name, "login_google": g_acc})
-                            st.switch_page("pages/app_kafe1.py")
-                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-                with st.expander("➕ Gunakan akun Google lain", expanded=False):
-                    with st.form("google_new_form", clear_on_submit=True):
-                        g_new_input    = st.text_input("Email Google baru", placeholder="contoh@gmail.com", key="google_new_email_input")
-                        btn_add_google = st.form_submit_button("✅ Lanjutkan", use_container_width=True)
-                    if btn_add_google and g_new_input.strip():
-                        g_acc     = g_new_input.strip()
-                        disp_name = ensure_google_user(g_acc)
-                        st.session_state.update({"show_google_popup": False, "logged_in": True,
-                                                  "login_username": disp_name, "login_google": g_acc})
-                        st.switch_page("pages/app_kafe1.py")
-                if st.button("✕ Batal", key="btn_close_google_popup", use_container_width=True):
-                    st.session_state["show_google_popup"] = False
-                    st.rerun(scope="fragment")
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    # Popup Daftar
-    if st.session_state.get("show_daftar_popup", False):
-        _, col_dpop, _ = st.columns([1, 4, 1])
-        with col_dpop:
-            st.markdown('<div style="background:#fff;border:2px solid #C8502A;border-radius:16px;padding:24px 28px;margin:16px 0;"><div style="font-family:Fraunces,serif;font-size:1.1rem;font-weight:800;color:#1C1917;margin-bottom:12px;">📝 Daftar Akun Baru</div>', unsafe_allow_html=True)
-            with st.form("daftar_form", clear_on_submit=False):
-                d_email = st.text_input("Email", placeholder="Email aktif kamu", key="daftar_email_input")
-                d_uname = st.text_input("Username", placeholder="Pilih username unik", key="daftar_username_input")
-                d_pwd   = st.text_input("Password", placeholder="Buat password kuat", type="password", key="daftar_password_input")
-                if st.session_state.get("daftar_error", ""):
-                    st.markdown(f'<div style="background:#FFF0EB;border:1px solid #C8502A;border-radius:8px;padding:8px 14px;font-size:.82rem;color:#C8502A;">⚠️ {st.session_state["daftar_error"]}</div>', unsafe_allow_html=True)
-                c_daftar, c_tutup = st.columns([3, 2])
-                with c_daftar:
-                    btn_daftar_submit = st.form_submit_button("✅ Daftar Sekarang", use_container_width=True)
-                with c_tutup:
-                    btn_daftar_tutup = st.form_submit_button("✕ Tutup", use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-            if btn_daftar_tutup:
-                st.session_state.update({"show_daftar_popup": False, "daftar_error": ""})
-                st.rerun(scope="fragment")
-            if btn_daftar_submit:
-                if not d_email.strip() or not d_uname.strip() or not d_pwd.strip():
-                    st.session_state["daftar_error"] = "Semua field harus diisi."
-                    st.rerun(scope="fragment")
-                else:
-                    ok, msg = upsert_user(email=d_email.strip(), username=d_uname.strip(), password=d_pwd.strip())
-                    if ok:
-                        st.session_state.update({"daftar_error": "", "show_daftar_popup": False,
-                                                 "logged_in": True, "login_username": d_uname.strip(),
-                                                 "login_google": ""})
-                        st.switch_page("pages/app_kafe1.py")
-                    else:
-                        st.session_state["daftar_error"] = msg
-                        st.rerun(scope="fragment")
-
 _render_login_section()
 
 # ════════════════════════════════════════════════════════════════
