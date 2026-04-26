@@ -503,7 +503,10 @@ for rank, nama in enumerate(valid_names_sorted, 1):
     </div>"""
 
 scroll_h    = 580
-scroll_html_inline = f"""
+# ✅ SESUDAH — pisah CSS+wrapper, cards, dan script menjadi 3 st.markdown terpisah
+
+# Bagian 1: CSS + pembuka div wrapper
+scroll_css_and_open = f"""
 <style>
 .scroll-outer-cmp {{
   overflow-x: auto;
@@ -527,48 +530,55 @@ scroll_html_inline = f"""
   padding-bottom: 4px;
 }}
 </style>
+<div style="padding:0 48px 28px;background:#fff;">
 <div class="scroll-outer-cmp" id="scrollOuterCmp">
   <div class="scroll-inner-cmp">
-    {all_cards_html}
+"""
+
+# Bagian 2: script + penutup div
+scroll_script_and_close = """
   </div>
 </div>
+</div>
 <script>
-(function(){{
+(function(){
   var el = document.getElementById('scrollOuterCmp');
   if (!el) return;
   var isDown = false, startX, scrollLeft;
-  el.addEventListener('mousedown', function(e) {{
+  el.addEventListener('mousedown', function(e) {
     isDown = true; startX = e.pageX - el.offsetLeft; scrollLeft = el.scrollLeft;
-  }});
-  el.addEventListener('mouseleave', function() {{ isDown = false; }});
-  el.addEventListener('mouseup', function() {{ isDown = false; }});
-  el.addEventListener('mousemove', function(e) {{
+  });
+  el.addEventListener('mouseleave', function() { isDown = false; });
+  el.addEventListener('mouseup', function() { isDown = false; });
+  el.addEventListener('mousemove', function(e) {
     if (!isDown) return;
     e.preventDefault();
     var x = e.pageX - el.offsetLeft;
     el.scrollLeft = scrollLeft - (x - startX);
-  }});
-}})();
+  });
+})();
 
-function navigateToDetail(kid, nama) {{
-  try {{
+function navigateToDetail(kid, nama) {
+  try {
     var parentUrl = window.parent.location.href;
     var baseUrl   = parentUrl.split('?')[0].replace(/\\/[^\\/]*$/, '');
     var url       = baseUrl + '/skemacari1?kid=' + encodeURIComponent(kid)
                             + '&nama=' + encodeURIComponent(nama)
                             + '&source=kasus_a';
     window.open(url, '_blank');
-  }} catch(e) {{
+  } catch(e) {
     window.open('/skemacari1?kid=' + encodeURIComponent(kid)
                 + '&nama=' + encodeURIComponent(nama)
                 + '&source=kasus_a', '_blank');
-  }}
-}}
-</script>"""
+  }
+}
+</script>
+"""
 
-st.markdown('<div style="padding:0 48px 28px;background:#fff;">', unsafe_allow_html=True)
-st.markdown(scroll_html_inline, unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
+# ✅ Render 3 bagian secara terpisah — all_cards_html tidak masuk f-string
+st.markdown(scroll_css_and_open, unsafe_allow_html=True)
+st.markdown(all_cards_html, unsafe_allow_html=True)        # ← Render kartu langsung
+st.markdown(scroll_script_and_close, unsafe_allow_html=True)
 
 st.markdown('<hr style="border:none;border-top:1px solid #E8DDD5;margin:0;">', unsafe_allow_html=True)
 
