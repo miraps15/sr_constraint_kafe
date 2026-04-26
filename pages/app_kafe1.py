@@ -2,15 +2,15 @@
 # SISTEM REKOMENDASI KAFE SURABAYA — app_kafe1.py (Logged-in)
 # Versi Streamlit Cloud
 #
-# PERBAIKAN PERFORMA [PATCH-LOADING] — hanya bagian yang crash:
-#   [P1] precompute_all_top5 + get_best_per_category
-#        sekarang di-guard dengan session_state["precompute_done"]
-#        → spinner hanya muncul sekali saat cache kosong,
-#          tidak kelap-kelip saat widget re-run
-#   [P2] _prewarm_absa_models: tidak berubah (sudah sinkron)
-#        tapi ditambah guard agar tidak dipanggil di top-level
-#        — hanya dipanggil saat tombol Analisis diklik
-#   [P3] Tidak ada perubahan logika bisnis, navigasi, atau UI
+# PERBAIKAN PERFORMA [PATCH-FLICKER]:
+#   [F1] Semua slideshow per-kategori digabung jadi SATU
+#        components.html → eliminasi kelap-kelip saat scroll
+#        dan saat switch tab/aspek.
+#   [F2] HTML slideshow di-cache via @st.cache_data sehingga
+#        tidak di-rebuild setiap Streamlit re-run.
+#   [F4] Guard _best_rendered_1 di session_state: slideshow
+#        hanya di-inject ulang jika data benar-benar berubah.
+#   Perbaikan lain tidak diubah dari PATCH-LOADING sebelumnya.
 # ============================================================
 
 import streamlit as st
@@ -37,7 +37,6 @@ st.set_page_config(
     page_icon="☕", layout="wide",
     initial_sidebar_state="collapsed",
 )
-# ── STARTUP GUARD: cegah re-komputasi saat health check ──────
 import os
 _IS_HEALTH_CHECK = os.environ.get("STREAMLIT_HEALTH_CHECK", "") == "true"
 
@@ -98,8 +97,6 @@ except Exception as _e:
 
 # ════════════════════════════════════════════════════════════════
 # PRE-WARM ABSA MODELS
-# [P2] Tidak dipanggil di top-level — hanya saat analisis diklik
-#      Definisi fungsi tetap sama persis
 # ════════════════════════════════════════════════════════════════
 def _prewarm_absa_models():
     if st.session_state.get("_absa_warmed", False):
@@ -181,8 +178,7 @@ def get_reviewer_aktif_per_kafe(_dataframe: pd.DataFrame) -> dict:
         result[kid] = round((aktif / total) * 100, 1)
     return result
 
-# [P1] Guard precompute — spinner hanya muncul saat cache kosong
-# Tidak re-run saat widget interaction karena dicek via session_state
+# [P1] Guard precompute
 if "precompute_done_1" not in st.session_state:
     with st.spinner("☕ Memuat data kafe..."):
         best_df      = get_best_per_category(df)
@@ -193,7 +189,7 @@ if "precompute_done_1" not in st.session_state:
 else:
     best_df      = st.session_state["_cached_best_df_1"]
     _top5_lookup = st.session_state["_cached_top5_1"]
-    
+
 _jml_review_map     = get_jumlah_review_per_kafe(df)
 _reviewer_aktif_map = get_reviewer_aktif_per_kafe(df)
 
@@ -683,16 +679,20 @@ st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
 # BEST KAFE — SLIDESHOW
+# [F1] Semua kategori digabung dalam SATU components.html
+# [F2] HTML di-cache via @st.cache_data
 # ════════════════════════════════════════════════════════════════
+
 CARD_W = 220
 IMG_H  = 128
 TOP5_H = 108
 BODY_H = 118
 
 
-def _build_one_card_html(row: pd.Series, rank: int, cat: str,
-                          bg_sec: str, top5_lookup: dict,
-                          jml_review_map: dict, reviewer_aktif_map: dict) -> str:
+def _build_one_card_html_1(row: pd.Series, rank: int, cat: str,
+                             bg_sec: str, top5_lookup: dict,
+                             jml_review_map: dict, reviewer_aktif_map: dict,
+                             identifier: str, is_google: bool) -> str:
     rank_bg_map  = {1: "#D4A017", 2: "#8C8C8C", 3: "#A0522D"}
     rank_bg      = rank_bg_map.get(rank, "rgba(28,25,23,.65)")
     nama_display = str(row.get("nama_kafe", "—"))
@@ -744,7 +744,7 @@ def _build_one_card_html(row: pd.Series, rank: int, cat: str,
         top5_html += '</div>'
 
     cat_encoded = urllib.parse.quote(cat)
-    nav_url = f"?nav_kid={kid}&nav_nama={urllib.parse.quote(nama_display)}&nav_cat={cat_encoded}&user={_identifier}&is_google={_is_google}"
+    nav_url = f"?nav_kid={kid}&nav_nama={urllib.parse.quote(nama_display)}&nav_cat={cat_encoded}&user={identifier}&is_google={is_google}"
 
     return f"""
 <div style="width:{CARD_W}px;flex-shrink:0;scroll-snap-align:start;">
@@ -787,55 +787,58 @@ def _build_one_card_html(row: pd.Series, rank: int, cat: str,
 </div>"""
 
 
-def build_slideshow_html_section(ranked_df: pd.DataFrame, cat: str,
-                                  bg_sec: str, top5_lookup: dict,
-                                  jml_review_map: dict,
-                                  reviewer_aktif_map: dict) -> str:
+# [F2] Cache HTML per kategori
+@st.cache_data(show_spinner=False)
+def _build_category_html_1(
+    cat: str,
+    ranked_json: str,
+    top5_json: str,
+    jml_review_json: str,
+    reviewer_aktif_json: str,
+    bg_sec: str,
+    accentbg: str,
+    accentfg: str,
+    icon: str,
+    identifier: str,
+    is_google: bool,
+    card_w: int, img_h: int, top5_h: int, body_h: int,
+) -> str:
+    ranked_df       = pd.read_json(ranked_json, orient="records")
+    top5_lookup     = json.loads(top5_json)
+    jml_review_map  = json.loads(jml_review_json)
+    reviewer_aktif  = json.loads(reviewer_aktif_json)
+
     if ranked_df.empty:
         return ""
+
     n_total      = len(ranked_df)
     uid          = cat.replace(" ", "_").replace("/", "_").lower()
-    card_total_w = CARD_W + 16
+    card_total_w = card_w + 16
+
     all_cards_html = "".join(
-        _build_one_card_html(row, i + 1, cat, bg_sec, top5_lookup,
-                             jml_review_map, reviewer_aktif_map)
+        _build_one_card_html_1(row, i + 1, cat, bg_sec, top5_lookup,
+                               jml_review_map, reviewer_aktif, identifier, is_google)
         for i, (_, row) in enumerate(ranked_df.iterrows())
     )
-    return f"""<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-<style>
-*{{box-sizing:border-box;margin:0;padding:0;}}
-body{{font-family:'Plus Jakarta Sans',sans-serif;background:{bg_sec};padding:0 0 24px;overflow-x:hidden;}}
-.slide-wrap{{position:relative;padding:0 0 4px;}}
-.slide-track{{
-  display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;
-  -webkit-overflow-scrolling:touch;padding:4px 4px 12px;
-  scrollbar-width:thin;scrollbar-color:rgba(200,80,42,.3) transparent;
-}}
-.slide-track::-webkit-scrollbar{{height:5px;}}
-.slide-track::-webkit-scrollbar-track{{background:transparent;}}
-.slide-track::-webkit-scrollbar-thumb{{background:rgba(200,80,42,.3);border-radius:10px;}}
-.btn-slide{{
-  position:absolute;top:50%;transform:translateY(-60%);
-  width:36px;height:36px;border-radius:50%;background:#fff;
-  border:1.5px solid #E8DDD5;box-shadow:0 2px 8px rgba(0,0,0,.12);
-  cursor:pointer;font-size:1rem;font-weight:700;color:#C8502A;
-  display:flex;align-items:center;justify-content:center;
-  z-index:10;transition:background .18s,box-shadow .18s;line-height:1;
-}}
-.btn-slide:hover{{background:#FFF0EB;box-shadow:0 4px 14px rgba(0,0,0,.18);}}
-.btn-prev{{left:4px;}}.btn-next{{right:4px;}}
-.slide-counter{{text-align:center;font-size:.72rem;color:#aaa;font-weight:500;margin-top:2px;}}
-</style>
-</head><body>
-<div class="slide-wrap">
-  <button class="btn-slide btn-prev" onclick="slide_{uid}(-1)">&#8249;</button>
-  <div class="slide-track" id="track_{uid}">{all_cards_html}</div>
-  <button class="btn-slide btn-next" onclick="slide_{uid}(1)">&#8250;</button>
+
+    return f"""
+<div style="background:{bg_sec};padding:36px 48px 14px;" id="section-{uid}">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+    <div style="font-family:'Fraunces',serif;font-size:1.25rem;font-weight:700;color:#1C1917;display:flex;align-items:center;gap:10px;">
+      {icon}&nbsp;Best&nbsp;<span style="padding:3px 12px;border-radius:50px;font-size:.66rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:{accentbg};color:{accentfg};">{cat.upper()}</span>
+    </div>
+    <div style="font-size:.75rem;color:#bbb;">{n_total} kafe &middot; geser untuk lihat semua</div>
+  </div>
+  <div style="font-size:.84rem;color:#78716C;margin-bottom:14px;">Diurutkan berdasarkan skor sentimen tertinggi ke terendah kategori aspek <b>{cat.lower()}</b></div>
+  <div style="position:relative;padding:0 0 4px;">
+    <button onclick="slide_{uid}(-1)" style="position:absolute;top:50%;left:4px;transform:translateY(-60%);width:36px;height:36px;border-radius:50%;background:#fff;border:1.5px solid #E8DDD5;box-shadow:0 2px 8px rgba(0,0,0,.12);cursor:pointer;font-size:1rem;font-weight:700;color:#C8502A;display:flex;align-items:center;justify-content:center;z-index:10;line-height:1;">&#8249;</button>
+    <div id="track_{uid}" style="display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding:4px 44px 12px;scrollbar-width:thin;scrollbar-color:rgba(200,80,42,.3) transparent;">
+      {all_cards_html}
+    </div>
+    <button onclick="slide_{uid}(1)" style="position:absolute;top:50%;right:4px;transform:translateY(-60%);width:36px;height:36px;border-radius:50%;background:#fff;border:1.5px solid #E8DDD5;box-shadow:0 2px 8px rgba(0,0,0,.12);cursor:pointer;font-size:1rem;font-weight:700;color:#C8502A;display:flex;align-items:center;justify-content:center;z-index:10;line-height:1;">&#8250;</button>
+  </div>
+  <div id="counter_{uid}" style="text-align:center;font-size:.72rem;color:#aaa;font-weight:500;margin-top:2px;">1 / {n_total}</div>
 </div>
-<div class="slide-counter" id="counter_{uid}">1 / {n_total}</div>
 <script>
 (function(){{
   var track=document.getElementById('track_{uid}');
@@ -845,43 +848,94 @@ body{{font-family:'Plus Jakarta Sans',sans-serif;background:{bg_sec};padding:0 0
   track.addEventListener('scroll',upd,{{passive:true}});
   window.slide_{uid}=function(d){{cur=Math.min(Math.max(cur+d,0),total-1);track.scrollTo({{left:cur*cardW,behavior:'smooth'}});}};
 }})();
-</script>
+</script>"""
+
+
+# [F1][F2] Build satu HTML besar berisi SEMUA kategori, di-cache
+@st.cache_data(show_spinner=False)
+def build_all_slides_html_1(
+    best_df_json: str,
+    top5_json: str,
+    jml_review_json: str,
+    reviewer_aktif_json: str,
+    cats_json: str,
+    clrs_json: str,
+    cat_icons_json: str,
+    cat_bg_json: str,
+    identifier: str,
+    is_google: bool,
+    card_w: int, img_h: int, top5_h: int, body_h: int,
+) -> tuple:
+    best_df        = pd.read_json(best_df_json, orient="records")
+    top5_lookup    = json.loads(top5_json)
+    unique_cats    = json.loads(cats_json)
+    clrs           = json.loads(clrs_json)
+    cat_icons      = json.loads(cat_icons_json)
+    cat_bg         = json.loads(cat_bg_json)
+
+    if best_df.empty:
+        return "", 0
+
+    card_h   = img_h + body_h + top5_h + 38 + 32
+    iframe_h = card_h + 80
+
+    body_parts = []
+    for idx_cat, cat in enumerate(unique_cats):
+        cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
+        if cat_ranked.empty:
+            continue
+
+        bg_sec    = cat_bg.get(cat, "#fff")
+        icon      = cat_icons.get(cat, "&#9749;")
+        accentbg, accentfg = clrs[idx_cat % len(clrs)]
+
+        kids_in_cat = set(cat_ranked["kafe_id"].astype(str).tolist())
+        top5_subset = {
+            f"{k}|{c}": v
+            for (k, c), v in top5_lookup.items()
+            if k in kids_in_cat and c == cat
+        }
+
+        section_html = _build_category_html_1(
+            cat                 = cat,
+            ranked_json         = cat_ranked.to_json(orient="records"),
+            top5_json           = json.dumps(top5_subset),
+            jml_review_json     = jml_review_json,
+            reviewer_aktif_json = reviewer_aktif_json,
+            bg_sec              = bg_sec,
+            accentbg            = accentbg,
+            accentfg            = accentfg,
+            icon                = icon,
+            identifier          = identifier,
+            is_google           = is_google,
+            card_w              = card_w,
+            img_h               = img_h,
+            top5_h              = top5_h,
+            body_h              = body_h,
+        )
+        body_parts.append(section_html)
+
+    all_body = '<hr style="border:none;border-top:1px solid #E8DDD5;margin:0;">'.join(body_parts)
+
+    full_html = f"""<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{font-family:'Plus Jakarta Sans',sans-serif;background:#fff;overflow-x:hidden;}}
+div[id^="track_"]{{scrollbar-width:thin;scrollbar-color:rgba(200,80,42,.3) transparent;}}
+div[id^="track_"]::-webkit-scrollbar{{height:5px;}}
+div[id^="track_"]::-webkit-scrollbar-track{{background:transparent;}}
+div[id^="track_"]::-webkit-scrollbar-thumb{{background:rgba(200,80,42,.3);border-radius:10px;}}
+</style>
+</head><body>
+{all_body}
 </body></html>"""
 
+    total_h = iframe_h * len(body_parts) + 20
+    return full_html, total_h
 
-def render_best_section(cat: str, ranked_df: pd.DataFrame, top5_lookup: dict,
-                         jml_review_map: dict, reviewer_aktif_map: dict) -> None:
-    if ranked_df.empty:
-        return
-    icon    = CAT_ICONS.get(cat, "&#9749;")
-    bg_sec  = CAT_BG.get(cat, "#fff")
-    n_total = len(ranked_df)
-    idx_cat = unique_cats.index(cat) if cat in unique_cats else 0
-    accentbg, accentfg = _clrs[idx_cat % len(_clrs)]
-
-    st.markdown(f"""
-<div style="background:{bg_sec};padding:36px 48px 14px;">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-    <div style="font-family:'Fraunces',serif;font-size:1.25rem;font-weight:700;color:#1C1917;display:flex;align-items:center;gap:10px;">
-      {icon}&nbsp;Best&nbsp;<span style="padding:3px 12px;border-radius:50px;font-size:.66rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:{accentbg};color:{accentfg};">{cat.upper()}</span>
-    </div>
-    <div style="font-size:.75rem;color:#bbb;">{n_total} kafe &middot; geser untuk lihat semua</div>
-  </div>
-  <div style="font-size:.84rem;color:#78716C;margin-bottom:14px;">
-    Diurutkan berdasarkan skor sentimen tertinggi ke terendah kategori aspek <b>{cat.lower()}</b>
-  </div>
-</div>""", unsafe_allow_html=True)
-
-    card_h   = IMG_H + BODY_H + TOP5_H + 38 + 32
-    iframe_h = card_h + 60
-    html     = build_slideshow_html_section(
-        ranked_df, cat, bg_sec, top5_lookup,
-        jml_review_map, reviewer_aktif_map
-    )
-    st.markdown(f'<div style="background:{bg_sec};padding:0 12px 36px;">', unsafe_allow_html=True)
-    components.html(html, height=iframe_h, scrolling=False)
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
 _any_popup_active_1 = (
     st.session_state.get("show_no_kafe_popup", False) or
@@ -891,7 +945,7 @@ _any_popup_active_1 = (
 
 # ════════════════════════════════════════════════════════════════
 # RENDER BEST KAFE
-# [P1] Guard: hanya render jika data sudah siap
+# [F1][F4] Satu iframe, cache HTML, guard session_state
 # ════════════════════════════════════════════════════════════════
 st.markdown(f"""
 <div id="best-section" style="padding:48px 48px 24px;background:#fff;">
@@ -906,15 +960,40 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 if not best_df.empty and not _any_popup_active_1:
-    for cat in unique_cats:
-        cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
-        render_best_section(
-            cat, cat_ranked, _top5_lookup,
-            _jml_review_map, _reviewer_aktif_map
+    # [F4] Guard: hanya rebuild jika belum ada di session_state
+    _slides_key_1 = "_all_slides_html_loggedin"
+    if _slides_key_1 not in st.session_state:
+        _top5_serializable = {f"{k}|{c}": v for (k, c), v in _top5_lookup.items()}
+
+        _all_html_1, _total_h_1 = build_all_slides_html_1(
+            best_df_json        = best_df.to_json(orient="records"),
+            top5_json           = json.dumps(_top5_serializable),
+            jml_review_json     = json.dumps(_jml_review_map),
+            reviewer_aktif_json = json.dumps(_reviewer_aktif_map),
+            cats_json           = json.dumps(unique_cats),
+            clrs_json           = json.dumps(_clrs),
+            cat_icons_json      = json.dumps(CAT_ICONS),
+            cat_bg_json         = json.dumps(CAT_BG),
+            identifier          = _identifier,
+            is_google           = _is_google,
+            card_w              = CARD_W,
+            img_h               = IMG_H,
+            top5_h              = TOP5_H,
+            body_h              = BODY_H,
         )
+        st.session_state[_slides_key_1]         = _all_html_1
+        st.session_state[_slides_key_1 + "_h"]  = _total_h_1
+
+    _all_html_1 = st.session_state[_slides_key_1]
+    _total_h_1  = st.session_state.get(_slides_key_1 + "_h", 2000)
+
+    # [F1] SATU components.html untuk semua kategori
+    if _all_html_1:
+        components.html(_all_html_1, height=_total_h_1, scrolling=True)
+
 elif _any_popup_active_1:
     st.markdown('<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Memproses...</div>', unsafe_allow_html=True)
-    
+
 # ════════════════════════════════════════════════════════════════
 # ANALISIS SENTIMEN
 # ════════════════════════════════════════════════════════════════
@@ -1100,19 +1179,18 @@ with st.container():
             else:
                 n_uniq = min(len(set(r.strip() for r in analisis_reviews if r.strip())), MAX_REVIEW_BATCH)
                 st.markdown(f'<span style="font-size:.84rem;color:#78716C;">← {n_uniq} review unik akan dianalisis</span>', unsafe_allow_html=True)
-        # Tambahkan sebelum if btn_analisis:
+
         if analisis_reviews:
             st.session_state["_pending_reviews"] = analisis_reviews
         if analisis_nama.strip():
             st.session_state["_pending_nama"] = analisis_nama.strip()
-    
+
         if btn_analisis and analisis_nama.strip() and analisis_reviews and _engine_available:
             st.session_state["analisis_processing"] = True
             st.session_state["analisis_error"]      = ""
             st.session_state["_nav_to_analisis"]    = True
             st.rerun()
-        
-        # Pisahkan eksekusi berat dari render loop utama
+
         if st.session_state.get("_nav_to_analisis", False) and st.session_state.get("analisis_processing", False):
             st.session_state.pop("_nav_to_analisis", None)
             try:
