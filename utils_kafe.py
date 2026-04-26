@@ -491,91 +491,81 @@ def precompute_top5_conditions_imdb(dataframe: pd.DataFrame) -> dict:
     return result
 
 # ─── KASUS A: skor keseluruhan satu kafe ──────────────────────
-def compute_overall_score_imdb_kasus_a(dataframe: pd.DataFrame,
-                                        kid: str) -> dict:
-    C         = compute_global_C(dataframe)
-    all_conds = dataframe["aspect_condition"].dropna().unique().tolist()
-    all_kids  = dataframe["kafe_id"].unique().tolist()
-    if not all_conds:
-        return {"Vi": 0.0, "sentimen_pct": 0.0}
+def compute_overall_score(dataframe: pd.DataFrame) -> pd.DataFrame:
+    C = compute_global_C(dataframe)
+    m = M_IMDB
 
-    n_conds         = len(all_conds)
-    wj              = 1.0 / n_conds
-    wr_matrix       = {}
-    max_wr_per_cond = {}
+    # Vectorized: hitung WR semua (kid, cond) sekaligus
+    grp = dataframe.groupby(["kafe_id", "aspect_condition"])
+    stats = pd.concat([
+        grp["skor_sentimen"].mean().rename("R"),
+        grp["skor_sentimen"].count().rename("v"),
+    ], axis=1).reset_index()
 
-    for cond in all_conds:
-        sub_cond = dataframe[dataframe["aspect_condition"] == cond]
-        grp  = sub_cond.groupby("kafe_id")
-        r_i  = grp["skor_sentimen"].mean()
-        v_i  = grp["skor_sentimen"].count()
-        max_wr = 0.0
-        for k in r_i.index:
-            wr = compute_imdb_wr(float(v_i[k]), float(r_i[k]), C, M_IMDB)
-            wr_matrix[(k, cond)] = wr
-            if wr > max_wr:
-                max_wr = wr
-        max_wr_per_cond[cond] = max_wr if max_wr > 0 else 1e-9
+    stats["WR"] = (stats["v"] / (m + stats["v"])) * stats["R"] + \
+                  (m / (m + stats["v"])) * C
 
-    vi = 0.0
-    for cond in all_conds:
-        wr  = wr_matrix.get((kid, cond), 0.0)
-        rij = wr / max_wr_per_cond[cond]
-        vi += wj * rij
-    return {"Vi": round(vi, 4), "sentimen_pct": round(vi * 100, 1)}
+    # Normalisasi per kondisi
+    max_wr = stats.groupby("aspect_condition")["WR"].max().rename("max_WR")
+    stats  = stats.merge(max_wr.reset_index(), on="aspect_condition", how="left")
+    stats["max_WR"] = stats["max_WR"].replace(0, 1e-9)
+    stats["Rij"]    = stats["WR"] / stats["max_WR"]
 
+    # Bobot rata: 1 / jumlah kondisi unik global
+    n_conds = stats["aspect_condition"].nunique()
+    wj      = 1.0 / n_conds if n_conds > 0 else 1.0
+
+    # Vi per kafe
+    vi_df = (stats.groupby("kafe_id")["Rij"]
+               .sum()
+               .mul(wj)
+               .reset_index()
+               .rename(columns={"Rij": "overall_score"}))
+    vi_df["sentimen_pct_all"] = (vi_df["overall_score"] * 100).round(1)
+
+    return vi_df
 
 # ─── compute_saw_scores: Kasus C semua kafe ───────────────────
 def compute_saw_scores(dataframe: pd.DataFrame) -> pd.DataFrame:
-    C         = compute_global_C(dataframe)
-    all_conds = dataframe["aspect_condition"].dropna().unique().tolist()
-    all_kids  = dataframe["kafe_id"].unique().tolist()
+    C = compute_global_C(dataframe)
+    m = M_IMDB
 
-    cond_cat_map = (dataframe[["aspect_condition","category_aspect_kafe"]]
-                    .drop_duplicates()
-                    .set_index("aspect_condition")["category_aspect_kafe"]
-                    .to_dict())
-    cat_conds = {}
-    for cond in all_conds:
-        cat = cond_cat_map.get(cond, "unknown")
-        cat_conds.setdefault(cat, []).append(cond)
+    # Vectorized WR
+    grp = dataframe.groupby(["kafe_id", "aspect_condition"])
+    stats = pd.concat([
+        grp["skor_sentimen"].mean().rename("R"),
+        grp["skor_sentimen"].count().rename("v"),
+    ], axis=1).reset_index()
 
-    max_wr_per_cond = {}
-    wr_all = {}
-    for cond in all_conds:
-        sub_cond = dataframe[dataframe["aspect_condition"] == cond]
-        grp  = sub_cond.groupby("kafe_id")
-        r_i  = grp["skor_sentimen"].mean()
-        v_i  = grp["skor_sentimen"].count()
-        max_wr = 0.0
-        for k in r_i.index:
-            wr = compute_imdb_wr(float(v_i[k]), float(r_i[k]), C, M_IMDB)
-            wr_all[(k, cond)] = wr
-            if wr > max_wr:
-                max_wr = wr
-        max_wr_per_cond[cond] = max_wr if max_wr > 0 else 1e-9
+    stats["WR"] = (stats["v"] / (m + stats["v"])) * stats["R"] + \
+                  (m / (m + stats["v"])) * C
 
-    records = []
-    for kid in all_kids:
-        kafe_sub   = dataframe[dataframe["kafe_id"] == kid]
-        kafe_conds = set(kafe_sub["aspect_condition"].unique())
-        for cat, conds_in_cat in cat_conds.items():
-            n_conds = len(conds_in_cat)
-            wj      = 1.0 / n_conds if n_conds > 0 else 1.0
-            v_cat   = 0.0
-            for cond in conds_in_cat:
-                if cond in kafe_conds:
-                    wr  = wr_all.get((kid, cond), 0.0)
-                    rij = wr / max_wr_per_cond[cond]
-                else:
-                    rij = 0.0
-                v_cat += wj * rij
-            records.append({"kafe_id": kid,
-                             "category_aspect_kafe": cat,
-                             "saw_score":    round(v_cat, 4),
-                             "sentimen_pct": round(v_cat * 100, 1)})
-    return pd.DataFrame(records).sort_values(
-        ["kafe_id","sentimen_pct"], ascending=[True, False])
+    # Merge category
+    cat_map = (dataframe[["aspect_condition", "category_aspect_kafe"]]
+               .drop_duplicates())
+    stats = stats.merge(cat_map, on="aspect_condition", how="left")
+
+    # Max WR per kondisi (untuk normalisasi)
+    max_wr = stats.groupby("aspect_condition")["WR"].max().rename("max_WR")
+    stats  = stats.merge(max_wr.reset_index(), on="aspect_condition", how="left")
+    stats["max_WR"] = stats["max_WR"].replace(0, 1e-9)
+    stats["Rij"]    = stats["WR"] / stats["max_WR"]
+
+    # Bobot per kategori: 1 / jumlah kondisi dalam kategori
+    n_cond_per_cat = (stats.groupby("category_aspect_kafe")["aspect_condition"]
+                      .nunique().rename("n_conds"))
+    stats = stats.merge(n_cond_per_cat.reset_index(), on="category_aspect_kafe", how="left")
+    stats["wj"]      = 1.0 / stats["n_conds"].replace(0, 1.0)
+    stats["weighted"] = stats["wj"] * stats["Rij"]
+
+    # Vi per (kafe, kategori)
+    result = (stats.groupby(["kafe_id", "category_aspect_kafe"])["weighted"]
+              .sum()
+              .reset_index()
+              .rename(columns={"weighted": "saw_score"}))
+    result["sentimen_pct"] = (result["saw_score"] * 100).round(1)
+
+    return result.sort_values(["kafe_id", "sentimen_pct"], ascending=[True, False])
 
 
 # ─── compute_overall_score: Kasus A semua kafe ────────────────
