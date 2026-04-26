@@ -835,7 +835,8 @@ def build_all_slides_html(
     (bukan full HTML document) — akan di-render via st.markdown, bukan iframe.
     [G5] Key top5_lookup sudah string "kid|cat" sejak serialisasi.
     """
-    best_df      = pd.read_json(best_df_json, orient="records")
+    import io
+    best_df      = pd.read_json(io.StringIO(best_df_json), orient="records")
     top5_lookup  = json.loads(top5_json)   # key: "kid|cat" string
     reviewer_pct = json.loads(reviewer_pct_json)
     unique_cats  = json.loads(cats_json)
