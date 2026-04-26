@@ -198,8 +198,14 @@ def get_best_per_category_cached(dataframe: pd.DataFrame) -> pd.DataFrame:
     from utils_kafe import compute_best_per_category_imdb
     return compute_best_per_category_imdb(dataframe)
 
-overall_df = get_overall_scores_kasus_a(df)
-saw_scores = get_saw_scores_all(df)
+if "_cached_overall" not in st.session_state:
+    st.session_state["_cached_overall"] = compute_overall_score(df)
+if "_cached_saw_cat" not in st.session_state:
+    st.session_state["_cached_saw_cat"] = compute_saw_scores(df)
+
+overall_df = st.session_state["_cached_overall"]
+saw_scores = st.session_state["_cached_saw_cat"]
+
 sub_kafe   = df[df["kafe_id"] == kafe_id].copy()
 
 # Tentukan skor sesuai asal navigasi
