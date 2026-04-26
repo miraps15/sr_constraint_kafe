@@ -852,16 +852,6 @@ def _build_category_html_1(
   </div>
   <div id="counter_{uid}" class="slide-counter">1 / {n_total}</div>
 </div>"""
-(function(){{
-  var track=document.getElementById('track_{uid}');
-  var cnt=document.getElementById('counter_{uid}');
-  var cardW={card_total_w},total={n_total},cur=0;
-  function upd(){{cur=Math.min(Math.max(Math.round(track.scrollLeft/cardW),0),total-1);cnt.textContent=(cur+1)+' / '+total;}}
-  track.addEventListener('scroll',upd,{{passive:true}});
-  window.slide_{uid}=function(d){{cur=Math.min(Math.max(cur+d,0),total-1);track.scrollTo({{left:cur*cardW,behavior:'smooth'}});}};
-}})();
-</script>"""
-
 
 # [F1][F2] Build satu HTML besar berisi SEMUA kategori, di-cache
 @st.cache_data(show_spinner=False)
