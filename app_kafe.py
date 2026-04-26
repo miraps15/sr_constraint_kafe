@@ -84,12 +84,12 @@ def get_reviewer_aktif_pct_per_kafe(dataframe: pd.DataFrame) -> pd.Series:
 # PRECOMPUTE — [P1] Lazy: hanya dijalankan sekali, cached
 # ════════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False)
-def get_best_per_category(dataframe: pd.DataFrame) -> pd.DataFrame:
-    return compute_best_per_category_imdb(dataframe)
+def get_best_per_category(_dataframe: pd.DataFrame) -> pd.DataFrame:
+    return compute_best_per_category_imdb(_dataframe)
 
 @st.cache_data(show_spinner=False)
-def precompute_all_top5(dataframe: pd.DataFrame) -> dict:
-    return precompute_top5_conditions_imdb(dataframe)
+def precompute_all_top5(_dataframe: pd.DataFrame) -> dict:
+    return precompute_top5_conditions_imdb(_dataframe)
 
 # [P1] Jalankan precompute dalam blok spinner sekali saja
 # agar layar tidak kelap-kelip — hanya muncul saat cache kosong
