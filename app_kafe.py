@@ -14,8 +14,6 @@
 # ============================================================
 
 import streamlit as st
-st.set_option('client.showErrorDetails', False)
-
 import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
@@ -99,12 +97,23 @@ if "precompute_done" not in st.session_state:
     with st.spinner("☕ Memuat data kafe..."):
         best_df      = get_best_per_category(df)
         _top5_lookup = precompute_all_top5(df)
-    st.session_state["precompute_done"] = True
+    # Simpan hasil langsung ke session_state agar tidak re-deserialize
+    st.session_state["precompute_done"]   = True
+    st.session_state["_cached_best_df"]   = best_df
+    st.session_state["_cached_top5"]      = _top5_lookup
 else:
-    best_df      = get_best_per_category(df)
-    _top5_lookup = precompute_all_top5(df)
+    best_df      = st.session_state["_cached_best_df"]
+    _top5_lookup = st.session_state["_cached_top5"]
 
 _reviewer_aktif_pct = get_reviewer_aktif_pct_per_kafe(df)
+
+# Guard: jangan render slideshow berat saat popup aktif
+_any_popup_active = (
+    st.session_state.get("show_no_kafe_popup", False) or
+    st.session_state.get("show_lokasi_only_popup", False) or
+    st.session_state.get("show_google_popup", False) or
+    st.session_state.get("show_daftar_popup", False)
+)
 
 # ════════════════════════════════════════════════════════════════
 # PREFERENSI — helper functions
@@ -375,8 +384,7 @@ def navigate_from_query(q: str):
 
 if search_btn and search_input:
     navigate_from_query(search_input)
-elif search_input and search_input != "" and st.session_state.get("last_search") != search_input:
-    st.session_state["last_search"] = search_input
+elif search_input and search_input != "":
     navigate_from_query(search_input)
 
 st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
@@ -509,7 +517,8 @@ with st.container():
             _, col_tutup = st.columns([7, 2])
             with col_tutup:
                 if st.button("✕ Tutup", key="btn_close_no_kafe"):
-                    st.session_state["show_no_kafe_popup"] = False; st.rerun()
+                    st.session_state["show_no_kafe_popup"] = False
+                    st.rerun()
 
         # Popup: lokasi saja
         if st.session_state.get("show_lokasi_only_popup", False):
@@ -696,24 +705,11 @@ def render_best_section(cat, ranked_df, top5_lookup, reviewer_aktif_pct):
 </div>""", unsafe_allow_html=True)
     card_h   = IMG_H + BODY_H + TOP5_H + 38 + 32
     iframe_h = card_h + 60
-
-    html = st.session_state["best_html_cache"].get(cat)
-    
-    if html is None:
-        html = build_slideshow_html_section(
-            ranked_df,
-            cat,
-            bg_sec,
-            top5_lookup,
-            reviewer_aktif_pct
-        )
+    html     = build_slideshow_html_section(ranked_df, cat, bg_sec, top5_lookup, reviewer_aktif_pct)
     st.markdown(f'<div style="background:{bg_sec};padding:0 12px 36px;">', unsafe_allow_html=True)
     components.html(html, height=iframe_h, scrolling=False)
     st.markdown('</div>', unsafe_allow_html=True)
 
-if "best_html_cache" not in st.session_state:
-    st.session_state["best_html_cache"] = {}
-    
 # ── Render Best Kafe ──────────────────────────────────────────
 st.markdown(f"""
 <div id="best-section" style="padding:48px 48px 24px;background:#fff;">
@@ -727,35 +723,13 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-if not best_df.empty:
+# [P2] Guard: hanya render slideshow jika data sudah siap
+if not best_df.empty and not _any_popup_active:
     for cat in unique_cats:
         cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
-
-        if cat not in st.session_state["best_html_cache"]:
-            bg_sec = CAT_BG.get(cat, "#fff")
-        
-            html = build_slideshow_html_section(
-                cat_ranked,
-                cat,
-                bg_sec,
-                _top5_lookup,
-                _reviewer_aktif_pct
-            )
-        
-            st.session_state["best_html_cache"][cat] = html
-
-        render_best_section(
-            cat,
-            cat_ranked,
-            _top5_lookup,
-            _reviewer_aktif_pct
-        )
-else:
-    st.markdown(
-        '<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Data sedang disiapkan, refresh halaman sebentar lagi.</div>',
-        unsafe_allow_html=True
-    )
-    
+        render_best_section(cat, cat_ranked, _top5_lookup, _reviewer_aktif_pct)
+elif _any_popup_active:
+    st.markdown('<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Menutup popup...</div>', unsafe_allow_html=True)
 # ════════════════════════════════════════════════════════════════
 # ANALISIS SENTIMEN — locked
 # ════════════════════════════════════════════════════════════════
@@ -847,13 +821,9 @@ if btn_masuk:
         st.rerun()
 
 if btn_google:
-    if not st.session_state.get("show_google_popup", False):
-        st.session_state["show_google_popup"] = True
-        st.rerun()
+    st.session_state["show_google_popup"] = True; st.rerun()
 if btn_daftar_link:
-    if not st.session_state.get("show_daftar_popup", False):
-        st.session_state["show_daftar_popup"] = True
-        st.rerun()
+    st.session_state["show_daftar_popup"] = True; st.rerun()
 
 # ── Popup: Google ─────────────────────────────────────────────
 if st.session_state.get("show_google_popup", False):
