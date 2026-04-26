@@ -132,42 +132,105 @@ def _is_valid_cached_file(path: str, name: str) -> bool:
         return False
     return True
 
+# ✅ GANTI DENGAN INI:
 def _download_gdrive_file(file_id: str, dest_path: str, desc: str = "", name: str = "") -> bool:
     if _is_valid_cached_file(dest_path, name):
         print(f"[absa_engine] Cache valid: {desc}")
         return True
-    url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    print(f"[absa_engine] Downloading {desc}...")
+
+    print(f"[absa_engine] Downloading {desc} (id={file_id})...")
     try:
-        session  = requests.Session()
-        response = session.get(url, stream=True, timeout=120)
-        token    = None
+        session = requests.Session()
+
+        # Step 1: Request awal
+        url      = "https://drive.google.com/uc"
+        params   = {"id": file_id, "export": "download"}
+        response = session.get(url, params=params, stream=True, timeout=120)
+
+        # Step 2: Cari confirm token (untuk file besar)
+        # Google Drive mengembalikan form dengan token konfirmasi untuk file >100MB
+        confirm_token = None
+
+        # Cek dari cookies
         for key, value in response.cookies.items():
             if key.startswith("download_warning"):
-                token = value
+                confirm_token = value
                 break
-        if token:
-            params   = {"id": file_id, "confirm": token, "export": "download"}
-            response = session.get(
-                "https://drive.google.com/uc", params=params,
-                stream=True, timeout=300
-            )
+
+        # Jika tidak ada di cookies, cari di body HTML
+        if confirm_token is None:
+            content_type = response.headers.get("content-type", "")
+            if "text/html" in content_type:
+                # Baca sebagian body untuk cari token
+                chunk = b""
+                for c in response.iter_content(chunk_size=8192):
+                    chunk += c
+                    if len(chunk) > 65536:  # Baca max 64KB
+                        break
+
+                # Cari pola confirm= di HTML
+                import re
+                # Pola baru Google Drive (2024)
+                match = re.search(
+                    r'confirm=([0-9A-Za-z_\-]+)', chunk.decode("utf-8", errors="ignore")
+                )
+                if match:
+                    confirm_token = match.group(1)
+                else:
+                    # Pola alternatif: uuid dalam URL download
+                    match2 = re.search(
+                        r'uuid=([0-9A-Za-z_\-]+)', chunk.decode("utf-8", errors="ignore")
+                    )
+                    if match2:
+                        # Format baru: gunakan URL download dengan uuid
+                        uuid_val  = match2.group(1)
+                        url2      = f"https://drive.usercontent.google.com/download"
+                        params2   = {
+                            "id"      : file_id,
+                            "export"  : "download",
+                            "confirm" : "t",
+                            "uuid"    : uuid_val,
+                        }
+                        response = session.get(url2, params=params2, stream=True, timeout=600)
+                        confirm_token = "already_handled"
+
+        # Step 3: Jika ada confirm token biasa (bukan uuid), request ulang
+        if confirm_token and confirm_token != "already_handled":
+            params2  = {"id": file_id, "export": "download", "confirm": confirm_token}
+            response = session.get(url, params=params2, stream=True, timeout=600)
+
+        # Step 4: Jika masih HTML setelah semua upaya → coba URL alternatif
         content_type = response.headers.get("content-type", "")
-        if "text/html" in content_type and name not in ("asp_config", "sent_config"):
-            print(f"[absa_engine] Download {desc} mengembalikan HTML — akses ditolak")
-            return False
+        if "text/html" in content_type:
+            print(f"[absa_engine] Respons masih HTML, coba URL alternatif...")
+            alt_url  = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
+            response = session.get(alt_url, stream=True, timeout=600)
+            content_type = response.headers.get("content-type", "")
+            if "text/html" in content_type and name not in ("asp_config", "sent_config"):
+                print(f"[absa_engine] ✗ Download {desc} tetap mengembalikan HTML — akses ditolak atau file tidak publik")
+                return False
+
+        # Step 5: Tulis file
+        total_written = 0
         with open(dest_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=32768):
+            for chunk in response.iter_content(chunk_size=65536):
                 if chunk:
                     f.write(chunk)
-        size_mb = os.path.getsize(dest_path) / (1024 * 1024)
+                    total_written += len(chunk)
+
+        size_mb = total_written / (1024 * 1024)
         print(f"[absa_engine] Download selesai: {desc} ({size_mb:.2f} MB)")
+
         if not _is_valid_cached_file(dest_path, name):
-            print(f"[absa_engine] File {desc} tidak valid setelah download")
+            print(f"[absa_engine] ✗ File {desc} tidak valid setelah download ({total_written} bytes)")
+            if os.path.exists(dest_path):
+                os.remove(dest_path)
             return False
+
         return True
+
     except Exception as e:
-        print(f"[absa_engine] Gagal download {desc}: {e}")
+        print(f"[absa_engine] ✗ Gagal download {desc}: {e}")
         if os.path.exists(dest_path):
             os.remove(dest_path)
         return False
@@ -391,15 +454,32 @@ def load_glove(dim: int = 300):
             except Exception as e:
                 print(f"[absa_engine] Gagal parse GloVe Cloud: {e}")
 
+    # ✅ GANTI DENGAN ini — fallback tapi dengan warning yang jelas:
     if not embeddings:
-        # ✅ FIX: Raise error alih-alih diam-diam pakai random — supaya ketahuan
-        raise RuntimeError(
-            "[absa_engine] GloVe gagal dimuat! File mungkin korup atau download gagal. "
-            "Hapus cache dan coba lagi."
-        )
-
+        print("[absa_engine] ⚠️ GloVe kosong — kemungkinan download gagal atau file korup")
+        print("[absa_engine] Coba hapus cache di /tmp/absa_cache/ dan restart app")
+        # Fallback minimal dengan kata-kata paling kritis
+        # Ini TIDAK akurat tapi mencegah crash total
+        _critical_words = [
+            'food','coffee','service','place','staff','good','bad','delicious',
+            'clean','comfortable','taste','wifi','parking','atmosphere','price',
+            'menu','ambience','waiter','seat','location','music','toilet',
+            'dessert','drink','beverage','snack','quality','portion','wait',
+            'fast','slow','friendly','rude','cozy','noisy','quiet','crowded',
+            'recommend','excellent','terrible','amazing','awful','nice','dirty',
+            'hot','cold','fresh','stale','cheap','expensive','worth','value',
+        ]
+        np.random.seed(42)
+        for w in _critical_words:
+            np.random.seed(abs(hash(w)) % (2**31))
+            embeddings[w] = np.random.randn(dim).astype(np.float32)
+        print(f"[absa_engine] Fallback: {len(embeddings)} kata kritis dengan random embedding")
+    
     mean_vec = np.mean(list(embeddings.values()), axis=0)
     return embeddings, mean_vec
+    
+        mean_vec = np.mean(list(embeddings.values()), axis=0)
+        return embeddings, mean_vec
 
 # ════════════════════════════════════════════════════════════════
 # LOAD MODEL — mendukung Colab (lokal) dan Streamlit Cloud (download)
