@@ -14,6 +14,8 @@
 # ============================================================
 
 import streamlit as st
+st.set_option('client.showErrorDetails', False)
+
 import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
@@ -373,7 +375,8 @@ def navigate_from_query(q: str):
 
 if search_btn and search_input:
     navigate_from_query(search_input)
-elif search_input and search_input != "":
+elif search_input and search_input != "" and st.session_state.get("last_search") != search_input:
+    st.session_state["last_search"] = search_input
     navigate_from_query(search_input)
 
 st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
@@ -698,6 +701,9 @@ def render_best_section(cat, ranked_df, top5_lookup, reviewer_aktif_pct):
     components.html(html, height=iframe_h, scrolling=False)
     st.markdown('</div>', unsafe_allow_html=True)
 
+if "best_rendered" not in st.session_state:
+    st.session_state["best_rendered"] = False
+    
 # ── Render Best Kafe ──────────────────────────────────────────
 st.markdown(f"""
 <div id="best-section" style="padding:48px 48px 24px;background:#fff;">
@@ -711,14 +717,19 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# [P2] Guard: hanya render slideshow jika data sudah siap
 if not best_df.empty:
-    for cat in unique_cats:
-        cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
-        render_best_section(cat, cat_ranked, _top5_lookup, _reviewer_aktif_pct)
-else:
-    st.markdown('<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Data sedang disiapkan, refresh halaman sebentar lagi.</div>', unsafe_allow_html=True)
+    if not st.session_state.get("best_rendered", False):
+        for cat in unique_cats:
+            cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
+            render_best_section(cat, cat_ranked, _top5_lookup, _reviewer_aktif_pct)
 
+        st.session_state["best_rendered"] = True
+else:
+    st.markdown(
+        '<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Data sedang disiapkan, refresh halaman sebentar lagi.</div>',
+        unsafe_allow_html=True
+    )
+    
 # ════════════════════════════════════════════════════════════════
 # ANALISIS SENTIMEN — locked
 # ════════════════════════════════════════════════════════════════
@@ -810,9 +821,13 @@ if btn_masuk:
         st.rerun()
 
 if btn_google:
-    st.session_state["show_google_popup"] = True; st.rerun()
+    if not st.session_state.get("show_google_popup", False):
+        st.session_state["show_google_popup"] = True
+        st.rerun()
 if btn_daftar_link:
-    st.session_state["show_daftar_popup"] = True; st.rerun()
+    if not st.session_state.get("show_daftar_popup", False):
+        st.session_state["show_daftar_popup"] = True
+        st.rerun()
 
 # ── Popup: Google ─────────────────────────────────────────────
 if st.session_state.get("show_google_popup", False):
