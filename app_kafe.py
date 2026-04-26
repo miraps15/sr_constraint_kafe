@@ -109,6 +109,14 @@ _top5_lookup = st.session_state["_cached_top5"]
 
 _reviewer_aktif_pct = get_reviewer_aktif_pct_per_kafe(df)
 
+# Pre-cache saw dan overall agar skemabandingkan tidak OOM
+if "_cached_saw_cat" not in st.session_state:
+    _saw = compute_saw_scores(df)
+    st.session_state["_cached_saw_cat"] = _saw
+
+if "_cached_overall" not in st.session_state:
+    _ov = compute_overall_score(df)
+    st.session_state["_cached_overall"] = _ov
 # Guard: jangan render slideshow berat saat popup aktif
 _any_popup_active = (
     st.session_state.get("show_no_kafe_popup", False) or
