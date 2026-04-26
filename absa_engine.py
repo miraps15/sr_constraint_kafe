@@ -477,9 +477,6 @@ def load_glove(dim: int = 300):
     
     mean_vec = np.mean(list(embeddings.values()), axis=0)
     return embeddings, mean_vec
-    
-        mean_vec = np.mean(list(embeddings.values()), axis=0)
-        return embeddings, mean_vec
 
 # ════════════════════════════════════════════════════════════════
 # LOAD MODEL — mendukung Colab (lokal) dan Streamlit Cloud (download)
