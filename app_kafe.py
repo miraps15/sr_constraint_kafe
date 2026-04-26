@@ -137,11 +137,6 @@ def get_kafe_per_condition(cond: str) -> set:
     sub = df[df["aspect_condition"] == cond]
     return set(sub["kafe_id"].unique().tolist())
 
-# Pre-cache semua kondisi saat startup agar tidak compute saat user mengetik
-if "_cond_cache_ready" not in st.session_state:
-    _all_cond_cache = {c: get_kafe_per_condition(c) for c in all_condition}
-    st.session_state["_cond_cache_ready"] = True
-
 def find_kafe_for_prefs(pref_items: list, lokasi: str) -> tuple:
     if not pref_items:
         if lokasi and "kecamatan_kafe" in df.columns:
