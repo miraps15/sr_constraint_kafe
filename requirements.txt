@@ -1,41 +1,16 @@
-# ============================================================
-# requirements.txt — Streamlit Cloud GitHub Deployment
-# Letakkan di ROOT folder project (sejajar app_kafe.py)
-# ============================================================
+--extra-index-url https://download.pytorch.org/whl/cpu
 
-# ── Core Streamlit ───────────────────────────────────────────
 streamlit>=1.32.0
-
-# ── Data manipulation ────────────────────────────────────────
 pandas>=2.0.0
 numpy>=1.24.0
 openpyxl>=3.1.0
-
-# ── Google Sheets / Drive API ────────────────────────────────
 gspread>=6.0.0
 google-auth>=2.28.0
 google-auth-oauthlib>=1.2.0
-
-# ── HTTP requests (GDrive download, translate) ───────────────
 requests
-
-# ── PyTorch CPU (WAJIB untuk ABSA model) ─────────────────────
-# Streamlit Cloud tidak punya GPU → pakai versi CPU only
-# Versi ini lebih kecil dan tidak butuh CUDA
 torch>=2.0.0
---extra-index-url https://download.pytorch.org/whl/cpu
-
-# ── NLP — spaCy + model bahasa Inggris ───────────────────────
-spacy>=3.7.0
-# Model en_core_web_sm diinstall via URL langsung
-# (Streamlit Cloud tidak bisa jalankan: python -m spacy download)
+spacy==3.8.13
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
-
-# ── Translator ───────────────────────────────────────────────
 deep-translator>=1.11.0
-# googletrans: pakai versi ini karena versi 4.0.0 sering error
 googletrans==3.1.0a0
-
-# ── Excel download (hasil analisis) ──────────────────────────
-# openpyxl sudah di atas, xlsxwriter sebagai fallback
 xlsxwriter>=3.1.0
