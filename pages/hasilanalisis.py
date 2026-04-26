@@ -311,6 +311,7 @@ n_kafe_cat   = len(df_saw)
 n_cond_total = (
     df_converted["aspect_condition"].nunique() if not df_converted.empty else 0
 )
+raw_aspects = result_data.get("raw_aspects", [])
 n_aspects = len(raw_aspects)
 
 if not df_saw.empty and "Vi" in df_saw.columns:
@@ -320,12 +321,16 @@ elif not df_saw.empty and "skor_sentimen" in df_saw.columns:
 else:
     overall_vi = 0.0
 
+jumlah_rev = result_data.get("jumlah_review", 0)
 truncated_note = ""
+was_truncated = result_data.get("was_truncated", False)
+n_analyzed = result_data.get("n_analyzed", 0)
 if was_truncated:
     truncated_note = (
         f"⚡ {n_analyzed} dari {jumlah_rev} review dianalisis (deduplikasi & batching)"
     )
 
+nama_kafe = result_data.get("nama_kafe", "Unknown Kafe")
 _nama_kafe_safe = (
     str(nama_kafe)
     .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
