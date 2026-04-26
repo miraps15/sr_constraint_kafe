@@ -1,7 +1,6 @@
 # ============================================================
 # config.toml — Konfigurasi Streamlit
 # Letakkan di: .streamlit/config.toml
-# (folder .streamlit ada di ROOT project, sejajar app_kafe.py)
 # ============================================================
 
 [server]
@@ -9,29 +8,20 @@ headless = true
 enableCORS = false
 enableXsrfProtection = false
 maxUploadSize = 10
-# Tambahkan baris ini:
 maxMessageSize = 50
+
+[browser]
+gatherUsageStats = false
 
 [runner]
 magicEnabled = false
 fastReruns = true
-# Tambahkan baris ini:
 enforceSerializableSessionState = false
-
-[browser]
-# Matikan gather usage stats (opsional, untuk privasi)
-gatherUsageStats = false
 
 [theme]
 base = "light"
-# Warna utama brand KafeSby (rust/coklat)
 primaryColor = "#C8502A"
 backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F5F3F0"
 textColor = "#1C1917"
 font = "sans serif"
-
-[runner]
-# Hindari error pada magic commands di Colab vs Cloud
-magicEnabled = false
-fastReruns = true
