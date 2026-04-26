@@ -109,7 +109,9 @@ if "_cached_best_df" not in st.session_state:
 best_df      = st.session_state["_cached_best_df"]
 _top5_lookup = st.session_state["_cached_top5"]
 
-_reviewer_aktif_pct = get_reviewer_aktif_pct_per_kafe(df)
+if "_cached_reviewer_pct" not in st.session_state:
+    st.session_state["_cached_reviewer_pct"] = get_reviewer_aktif_pct_per_kafe(df)
+_reviewer_aktif_pct = st.session_state["_cached_reviewer_pct"]
 
 # Pre-cache saw dan overall agar skemabandingkan tidak OOM
 if "_cached_saw_cat" not in st.session_state:
@@ -134,6 +136,11 @@ _any_popup_active = (
 def get_kafe_per_condition(cond: str) -> set:
     sub = df[df["aspect_condition"] == cond]
     return set(sub["kafe_id"].unique().tolist())
+
+# Pre-cache semua kondisi saat startup agar tidak compute saat user mengetik
+if "_cond_cache_ready" not in st.session_state:
+    _all_cond_cache = {c: get_kafe_per_condition(c) for c in all_condition}
+    st.session_state["_cond_cache_ready"] = True
 
 def find_kafe_for_prefs(pref_items: list, lokasi: str) -> tuple:
     if not pref_items:
@@ -445,6 +452,8 @@ with st.container():
                 key=f"pref_cat_{cat}", label_visibility="collapsed",
                 placeholder=f"Pilih aspek {cat}…",
             )
+            # Simpan ke session state untuk tracking perubahan
+            st.session_state[f"_sel_{cat}"] = chosen
             selected_per_cat[cat] = chosen
 
         all_selected = []
@@ -734,23 +743,23 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# [P2] Guard: hanya render slideshow jika data sudah siap
-if not _any_popup_active:
-    if not best_df.empty:
-        for cat in unique_cats:
-            cat_ranked = best_df[
-                best_df["category_aspect_kafe"] == cat
-            ].reset_index(drop=True)
-            if not cat_ranked.empty:
-                render_best_section(cat, cat_ranked, _top5_lookup, _reviewer_aktif_pct)
-    else:
-        st.markdown(
-            '<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">'
-            '⏳ Data sedang disiapkan, refresh halaman sebentar lagi.</div>',
-            unsafe_allow_html=True
-        )
-elif _any_popup_active:
-    st.markdown('<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Menutup popup...</div>', unsafe_allow_html=True)
+# Cek apakah user sedang aktif mengisi preferensi
+_pref_active = bool(all_selected) or bool(pref_lokasi_input)
+
+if not best_df.empty and not _any_popup_active and not _pref_active:
+    for cat in unique_cats:
+        cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
+        if not cat_ranked.empty:
+            render_best_section(cat, cat_ranked, _top5_lookup, _reviewer_aktif_pct)
+elif _pref_active and not _any_popup_active:
+    st.markdown("""
+    <div style="padding:24px 48px;background:#FFF8F3;border-top:1px solid #E8DDD5;">
+      <div style="font-size:.88rem;color:#78716C;text-align:center;">
+        ✏️ Selesaikan pilihan preferensi di atas, lalu klik 
+        <b style="color:#C8502A;">Simpan Preferensi</b> untuk melihat rekomendasi.
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 # ════════════════════════════════════════════════════════════════
 # ANALISIS SENTIMEN — locked
 # ════════════════════════════════════════════════════════════════
