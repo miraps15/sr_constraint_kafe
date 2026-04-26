@@ -745,14 +745,24 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Cek apakah user sedang aktif mengisi preferensi
 _pref_active = bool(all_selected) or bool(pref_lokasi_input)
 
 if not best_df.empty and not _any_popup_active and not _pref_active:
-    for cat in unique_cats:
-        cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
-        if not cat_ranked.empty:
-            render_best_section(cat, cat_ranked, _top5_lookup, _reviewer_aktif_pct)
+    # Render hanya satu tab aktif, bukan semua slideshow sekaligus
+    tab_labels = [f"{CAT_ICONS.get(c,'☕')} {c.title()}" for c in unique_cats]
+    tabs = st.tabs(tab_labels)
+    for i, cat in enumerate(unique_cats):
+        with tabs[i]:
+            cat_ranked = best_df[
+                best_df["category_aspect_kafe"] == cat
+            ].reset_index(drop=True)
+            if not cat_ranked.empty:
+                render_best_section(cat, cat_ranked, _top5_lookup, _reviewer_aktif_pct)
+            else:
+                st.markdown(
+                    '<div style="padding:24px;color:#78716C;">Belum ada data untuk kategori ini.</div>',
+                    unsafe_allow_html=True
+                )
 elif _pref_active and not _any_popup_active:
     st.markdown("""
     <div style="padding:24px 48px;background:#FFF8F3;border-top:1px solid #E8DDD5;">
