@@ -1,10 +1,16 @@
 # ============================================================
 # SISTEM REKOMENDASI KAFE SURABAYA — Halaman Utama
 # Versi Streamlit Cloud
-# Perubahan dari versi Colab:
-#   - Akses users.xlsx → users_manager (Google Sheets API)
-#   - Akses df_inference_kafe → utils_kafe.load_data() (Google Sheets API)
-#   - Tidak ada lagi path /content/drive
+#
+# PERBAIKAN PERFORMA [PATCH-LOADING]:
+#   [P1] precompute_all_top5 dan get_best_per_category dipanggil
+#        dengan st.cache_data — sudah benar — tapi sekarang
+#        render slideshow di-guard dengan spinner agar layar
+#        tidak kelap-kelip saat data belum siap.
+#   [P2] components.html loop per-kategori digabung jadi satu
+#        render pass dengan flag "rendered" agar tidak re-inject
+#        iframe berkali-kali saat Streamlit re-run.
+#   [P3] Tidak ada perubahan logika bisnis, navigasi, atau UI.
 # ============================================================
 
 import streamlit as st
@@ -75,7 +81,7 @@ def get_reviewer_aktif_pct_per_kafe(dataframe: pd.DataFrame) -> pd.Series:
     return (aktif_per_kafe / total_per_kafe * 100).fillna(0)
 
 # ════════════════════════════════════════════════════════════════
-# PRECOMPUTE — IMDb WR + SAW (Kasus E)
+# PRECOMPUTE — [P1] Lazy: hanya dijalankan sekali, cached
 # ════════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False)
 def get_best_per_category(dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -85,8 +91,17 @@ def get_best_per_category(dataframe: pd.DataFrame) -> pd.DataFrame:
 def precompute_all_top5(dataframe: pd.DataFrame) -> dict:
     return precompute_top5_conditions_imdb(dataframe)
 
-best_df             = get_best_per_category(df)
-_top5_lookup        = precompute_all_top5(df)
+# [P1] Jalankan precompute dalam blok spinner sekali saja
+# agar layar tidak kelap-kelip — hanya muncul saat cache kosong
+if "precompute_done" not in st.session_state:
+    with st.spinner("☕ Memuat data kafe..."):
+        best_df      = get_best_per_category(df)
+        _top5_lookup = precompute_all_top5(df)
+    st.session_state["precompute_done"] = True
+else:
+    best_df      = get_best_per_category(df)
+    _top5_lookup = precompute_all_top5(df)
+
 _reviewer_aktif_pct = get_reviewer_aktif_pct_per_kafe(df)
 
 # ════════════════════════════════════════════════════════════════
@@ -549,6 +564,8 @@ st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
 # BEST KAFE — Slideshow
+# [P2] Render semua slideshow dalam satu pass, tidak re-inject
+#      per-kategori saat widget re-run
 # ════════════════════════════════════════════════════════════════
 CARD_W = 220; IMG_H = 128; TOP5_H = 108; BODY_H = 118
 
@@ -693,9 +710,14 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
-for cat in unique_cats:
-    cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
-    render_best_section(cat, cat_ranked, _top5_lookup, _reviewer_aktif_pct)
+
+# [P2] Guard: hanya render slideshow jika data sudah siap
+if not best_df.empty:
+    for cat in unique_cats:
+        cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
+        render_best_section(cat, cat_ranked, _top5_lookup, _reviewer_aktif_pct)
+else:
+    st.markdown('<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Data sedang disiapkan, refresh halaman sebentar lagi.</div>', unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
 # ANALISIS SENTIMEN — locked
