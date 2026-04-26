@@ -170,9 +170,9 @@ def suggest_remove_aspect(pref_items: list, lokasi: str) -> list:
             suggestions.append((cond, len(valid_kids)))
     return sorted(suggestions, key=lambda x: x[1], reverse=True)
 
-# ════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════
 # LOOKUP TABLES
-# ════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════
 all_nama             = sorted(df["nama_kafe"].dropna().unique().tolist())
 all_kecamatan_search = sorted(df["kecamatan_kafe"].dropna().unique().tolist()) \
                        if "kecamatan_kafe" in df.columns else []
@@ -192,6 +192,13 @@ if "kecamatan_kafe" in df.columns:
 nama_set      = set(all_nama)
 kecamatan_set = set(all_kecamatan_search)
 cond_set      = set(all_condition)
+
+# ════════════════════════════════════════════════════════════
+# PRE-CACHE KONDISI — harus SETELAH all_condition didefinisikan
+# ════════════════════════════════════════════════════════════
+if "_cond_cache_ready" not in st.session_state:
+    _all_cond_cache = {c: get_kafe_per_condition(c) for c in all_condition}
+    st.session_state["_cond_cache_ready"] = True
 
 # ════════════════════════════════════════════════════════════════
 # ICONS / BADGE
