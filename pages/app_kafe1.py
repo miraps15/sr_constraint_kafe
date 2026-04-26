@@ -37,6 +37,9 @@ st.set_page_config(
     page_icon="☕", layout="wide",
     initial_sidebar_state="collapsed",
 )
+# ── STARTUP GUARD: cegah re-komputasi saat health check ──────
+import os
+_IS_HEALTH_CHECK = os.environ.get("STREAMLIT_HEALTH_CHECK", "") == "true"
 
 # ════════════════════════════════════════════════════════════════
 # QUERY PARAMS
