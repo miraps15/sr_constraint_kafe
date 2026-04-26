@@ -8,8 +8,15 @@
 headless = true
 enableCORS = false
 enableXsrfProtection = false
-# Batas ukuran file upload (MB) — sesuaikan dengan kebutuhan Excel review
 maxUploadSize = 10
+# Tambahkan baris ini:
+maxMessageSize = 50
+
+[runner]
+magicEnabled = false
+fastReruns = true
+# Tambahkan baris ini:
+enforceSerializableSessionState = false
 
 [browser]
 # Matikan gather usage stats (opsional, untuk privasi)
