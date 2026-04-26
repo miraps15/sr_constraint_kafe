@@ -696,13 +696,23 @@ def render_best_section(cat, ranked_df, top5_lookup, reviewer_aktif_pct):
 </div>""", unsafe_allow_html=True)
     card_h   = IMG_H + BODY_H + TOP5_H + 38 + 32
     iframe_h = card_h + 60
-    html     = build_slideshow_html_section(ranked_df, cat, bg_sec, top5_lookup, reviewer_aktif_pct)
+
+    html = st.session_state["best_html_cache"].get(cat)
+    
+    if html is None:
+        html = build_slideshow_html_section(
+            ranked_df,
+            cat,
+            bg_sec,
+            top5_lookup,
+            reviewer_aktif_pct
+        )
     st.markdown(f'<div style="background:{bg_sec};padding:0 12px 36px;">', unsafe_allow_html=True)
     components.html(html, height=iframe_h, scrolling=False)
     st.markdown('</div>', unsafe_allow_html=True)
 
-if "best_rendered" not in st.session_state:
-    st.session_state["best_rendered"] = False
+if "best_html_cache" not in st.session_state:
+    st.session_state["best_html_cache"] = {}
     
 # ── Render Best Kafe ──────────────────────────────────────────
 st.markdown(f"""
@@ -718,12 +728,28 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 if not best_df.empty:
-    if not st.session_state.get("best_rendered", False):
-        for cat in unique_cats:
-            cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
-            render_best_section(cat, cat_ranked, _top5_lookup, _reviewer_aktif_pct)
+    for cat in unique_cats:
+        cat_ranked = best_df[best_df["category_aspect_kafe"] == cat].reset_index(drop=True)
 
-        st.session_state["best_rendered"] = True
+        if cat not in st.session_state["best_html_cache"]:
+            bg_sec = CAT_BG.get(cat, "#fff")
+        
+            html = build_slideshow_html_section(
+                cat_ranked,
+                cat,
+                bg_sec,
+                _top5_lookup,
+                _reviewer_aktif_pct
+            )
+        
+            st.session_state["best_html_cache"][cat] = html
+
+        render_best_section(
+            cat,
+            cat_ranked,
+            _top5_lookup,
+            _reviewer_aktif_pct
+        )
 else:
     st.markdown(
         '<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Data sedang disiapkan, refresh halaman sebentar lagi.</div>',
