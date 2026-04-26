@@ -5,6 +5,7 @@
 # - Tidak ada perubahan fungsionalitas utama (IMDb WR + SAW, Kasus A/C)
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import json
@@ -575,10 +576,11 @@ function navigateToDetail(kid, nama) {
 </script>
 """
 
-# ✅ Render 3 bagian secara terpisah — all_cards_html tidak masuk f-string
-st.markdown(scroll_css_and_open, unsafe_allow_html=True)
-st.markdown(all_cards_html, unsafe_allow_html=True)        # ← Render kartu langsung
-st.markdown(scroll_script_and_close, unsafe_allow_html=True)
+# ✅ Gabungkan semua jadi satu string HTML
+scroll_html_inline = scroll_css_and_open + all_cards_html + scroll_script_and_close
+
+# ✅ Render sebagai satu iframe utuh — flex tidak terputus
+components.html(scroll_html_inline, height=620, scrolling=False)
 
 st.markdown('<hr style="border:none;border-top:1px solid #E8DDD5;margin:0;">', unsafe_allow_html=True)
 
