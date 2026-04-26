@@ -23,6 +23,8 @@ from utils_kafe import (
     load_data,
     compute_best_per_category_imdb,
     precompute_top5_conditions_imdb,
+    compute_saw_scores,      # ← tambahkan ini
+    compute_overall_score,   # ← tambahkan ini
     gdrive_direct_url, build_slideshow_html, COMMON_CSS,
 )
 from users_manager import (
