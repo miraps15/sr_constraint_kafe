@@ -59,29 +59,28 @@ from collections import defaultdict
 import streamlit as st
 
 # ── Lazy imports ─────────────────────────────────────────────
-_spacy_loaded = False
-_nlp          = None
-
-def _get_nlp():
-    global _nlp, _spacy_loaded
-    if _spacy_loaded:
-        return _nlp
+# ✅ GANTI DENGAN INI:
+@st.cache_resource(show_spinner=False)
+def _get_nlp_cached():
     try:
         import spacy
         try:
-            _nlp = spacy.load("en_core_web_sm")
+            nlp = spacy.load("en_core_web_sm")
             print("[absa_engine] spaCy en_core_web_sm loaded OK")
+            return nlp
         except OSError:
             print("[absa_engine] Downloading spaCy en_core_web_sm...")
             from spacy.cli import download as spacy_download
             spacy_download("en_core_web_sm")
-            _nlp = spacy.load("en_core_web_sm")
-            print("[absa_engine] spaCy en_core_web_sm downloaded & loaded OK")
+            nlp = spacy.load("en_core_web_sm")
+            print("[absa_engine] spaCy downloaded & loaded OK")
+            return nlp
     except Exception as e:
         print(f"[absa_engine] spaCy tidak tersedia: {e}")
-        _nlp = None
-    _spacy_loaded = True
-    return _nlp
+        return None
+
+def _get_nlp():
+    return _get_nlp_cached()
 
 # ════════════════════════════════════════════════════════════════
 # DETEKSI ENVIRONMENT (Colab vs Streamlit Cloud)
@@ -352,21 +351,12 @@ class SentimentModel(nn.Module):
 # Cache global untuk Colab (tanpa @st.cache_resource agar tidak konflik)
 _glove_cache = None
 
+# ✅ GANTI: Hapus _glove_cache global, andalkan HANYA @st.cache_resource
 @st.cache_resource(show_spinner=True)
 def load_glove(dim: int = 300):
-    """
-    Load GloVe embeddings.
-    Colab    : baca dari COLAB_GLOVE_PATH (lokal)
-    Streamlit: download dari Google Drive
-    """
-    global _glove_cache
-    if _glove_cache is not None:
-        return _glove_cache
-
     embeddings = {}
 
     if _IS_COLAB:
-        # Colab: baca dari file lokal
         try:
             with open(COLAB_GLOVE_PATH, 'r', encoding='utf-8') as f:
                 for line in f:
@@ -379,8 +369,14 @@ def load_glove(dim: int = 300):
         except Exception as e:
             print(f"[absa_engine] Gagal load GloVe Colab: {e}")
     else:
-        # Streamlit Cloud: download dari Google Drive
         dest_path = _cached_path("glove", ".txt")
+        # ✅ FIX: Paksa validasi ukuran file sebelum pakai cache
+        if os.path.exists(dest_path):
+            size = os.path.getsize(dest_path)
+            if size < _MIN_FILE_SIZES["glove"]:
+                print(f"[absa_engine] Cache GloVe invalid ({size} bytes), hapus dan re-download")
+                os.remove(dest_path)
+        
         ok = _download_gdrive_file(_GDRIVE_IDS["glove"], dest_path, "GloVe embeddings", "glove")
         if ok:
             try:
@@ -396,20 +392,13 @@ def load_glove(dim: int = 300):
                 print(f"[absa_engine] Gagal parse GloVe Cloud: {e}")
 
     if not embeddings:
-        print("[absa_engine] GloVe fallback → random embeddings (hasil tidak akurat!)")
-        for w in ['food','coffee','service','place','staff','good','bad',
-                  'delicious','clean','comfortable','taste','wifi','parking',
-                  'atmosphere','price','menu','ambience','waiter','seat',
-                  'location','music','restroom','dessert','drink','beverage',
-                  'snack','quality','portion','wait','fast','slow','friendly',
-                  'rude','cozy','noisy','quiet','crowded','recommend']:
-            np.random.seed(abs(hash(w)) % (2**31))
-            embeddings[w] = np.random.randn(dim).astype(np.float32)
+        # ✅ FIX: Raise error alih-alih diam-diam pakai random — supaya ketahuan
+        raise RuntimeError(
+            "[absa_engine] GloVe gagal dimuat! File mungkin korup atau download gagal. "
+            "Hapus cache dan coba lagi."
+        )
 
-    mean_vec = (np.mean(list(embeddings.values()), axis=0)
-                if embeddings else np.zeros(dim, dtype=np.float32))
-
-    _glove_cache = (embeddings, mean_vec)
+    mean_vec = np.mean(list(embeddings.values()), axis=0)
     return embeddings, mean_vec
 
 # ════════════════════════════════════════════════════════════════
