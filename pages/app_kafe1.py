@@ -1005,6 +1005,11 @@ if not best_df.empty and not _any_popup_active_1:
     _all_html_1 = st.session_state[_slides_key_1]
     if _all_html_1:
         st.markdown(_all_html_1, unsafe_allow_html=True)
+        # ✅ PERBAIKAN: Hapus HTML besar dari session_state setelah render
+        # HTML akan di-rebuild dari @st.cache_data jika dibutuhkan lagi
+        # Ini mencegah session_state membengkak >10MB
+        if len(_all_html_1) > 500_000:  # >500KB
+            del st.session_state[_slides_key_1]
 
 elif _any_popup_active_1:
     st.markdown('<div style="padding:24px 48px;color:#78716C;font-size:.88rem;">⏳ Memproses...</div>', unsafe_allow_html=True)
@@ -1012,7 +1017,7 @@ elif _any_popup_active_1:
 # ════════════════════════════════════════════════════════════════
 # ANALISIS SENTIMEN
 # ════════════════════════════════════════════════════════════════
-MAX_REVIEW_BATCH = 20
+MAX_REVIEW_BATCH = 10
 
 def _hash_reviews(reviews: list) -> str:
     combined = "||".join(sorted(str(r).strip() for r in reviews))
@@ -1102,6 +1107,9 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
     
         # Alias skor untuk kompatibilitas hasilanalisis.py
         df_conv["skor"] = df_conv["skor_sentimen"].copy()
+    # ✅ PERBAIKAN: Paksa GC setelah analisis berat
+    import gc
+    gc.collect()
 
     result = {
         "raw_aspects"     : all_aspects,
