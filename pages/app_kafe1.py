@@ -221,20 +221,8 @@ def get_reviewer_aktif_per_kafe(_dataframe: pd.DataFrame) -> dict:
 
 # [P1] Guard precompute — dengan try-except agar tidak stuck saat crash
 try:
-    if "precompute_done_1" not in st.session_state:
-        with st.spinner("☕ Memuat data kafe..."):
-            _df_cache_key = (
-                df.shape,
-                hash(str(df.iloc[0].values.tolist()) if len(df) > 0 else "empty")
-            )
-            best_df      = get_best_per_category(_df_cache_key[0], _df_cache_key[1])
-            _top5_lookup = precompute_all_top5(_df_cache_key[0], _df_cache_key[1])
-        st.session_state["precompute_done_1"] = True
-        st.session_state["_cached_best_df_1"] = best_df
-        st.session_state["_cached_top5_1"]    = _top5_lookup
-    else:
-        best_df      = st.session_state["_cached_best_df_1"]
-        _top5_lookup = st.session_state["_cached_top5_1"]
+    best_df      = pd.DataFrame()
+    _top5_lookup = {}
 
 except Exception as _precompute_err:
     # Jika gagal, lanjutkan dengan data kosong
