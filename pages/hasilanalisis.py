@@ -177,13 +177,22 @@ st.markdown("""
 result_data = st.session_state.get("analisis_result", {})
 df_converted = result_data.get("df_converted", pd.DataFrame())
 
-# Pastikan kolom skor ada dan bertipe numerik
-if not df_converted.empty and "skor_sentimen" in df_converted.columns:
-    df_converted["skor"] = pd.to_numeric(df_converted["skor_sentimen"], errors="coerce").fillna(0)
-elif not df_converted.empty and "skor" not in df_converted.columns:
-    df_converted["skor"] = df_converted.get("sentimen", pd.Series()).apply(
-        lambda x: 1.0 if str(x).lower() == "positive" else 0.0
-    )
+if not df_converted.empty:
+    # Selalu hitung ulang dari kolom sentimen agar konsisten
+    # positive → 1.0, negative → 0.0
+    if "sentimen" in df_converted.columns:
+        df_converted["skor_sentimen"] = df_converted["sentimen"].apply(
+            lambda x: 1.0 if str(x).lower() == "positive" else 0.0
+        )
+        df_converted["skor"] = df_converted["skor_sentimen"].copy()
+    elif "skor_sentimen" in df_converted.columns:
+        df_converted["skor_sentimen"] = pd.to_numeric(
+            df_converted["skor_sentimen"], errors="coerce"
+        ).fillna(0)
+        df_converted["skor"] = df_converted["skor_sentimen"].copy()
+    else:
+        df_converted["skor_sentimen"] = 0.0
+        df_converted["skor"] = 0.0
 # ════════════════════════════════════════════════════════════════
 # PERHITUNGAN RUMUS A: IMDb Weighted Rating + SAW
 # ════════════════════════════════════════════════════════════════
