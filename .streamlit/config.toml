@@ -13,6 +13,8 @@ toolbarMode = "minimal"
 magicEnabled = false
 fastReruns = true
 enforceSerializableSessionState = false
+installTracer = false
+fixMatplotlib = false
 
 [browser]
 gatherUsageStats = false
