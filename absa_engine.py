@@ -1058,8 +1058,10 @@ def convert_aspects_to_kafe_format(aspects_with_sentiment: list) -> pd.DataFrame
         cat_kafe = str(row_k.get('category_aspect_kafe', cat))
         asp_cond = str(row_k.get('aspect_condition', cat))
         cat_term = str(row_k.get('category', cat))
-        skor     = float(row_k.get('skor_sentimen', skor_default))
-
+        # Selalu gunakan prediksi model, bukan dari df_konversi
+        # positive → 1, negative → 0
+        skor = 1.0 if sent_norm == 'positive' else 0.0
+        
         rows.append({
             'aspect': asp.get('aspect', ''), 'category': cat,
             'category_aspect_kafe': cat_kafe, 'category_aspect_term': cat_term,
