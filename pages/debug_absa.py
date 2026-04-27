@@ -8,6 +8,35 @@ import os
 import sys
 import tempfile
 
+# Tambahkan di awal setiap pages/*.py
+import gc
+
+def _page_crash_guard():
+    """
+    Guard untuk setiap sub-halaman.
+    Jika terjadi OOM atau error fatal, redirect ke app_kafe.py.
+    """
+    # Cek apakah memory sudah terlalu tinggi sebelum render
+    try:
+        import resource, platform
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        mem_mb = usage / 1024 if platform.system() != 'Darwin' else usage / (1024*1024)
+        
+        if mem_mb > 450:  # Di atas 450MB, mulai bersihkan
+            heavy_keys = [
+                "_all_slides_html_guest", "_all_slides_html_loggedin",
+                "_cached_best_df", "_cached_top5",
+                "_cached_best_df_1", "_cached_top5_1",
+            ]
+            for k in heavy_keys:
+                if k in st.session_state:
+                    del st.session_state[k]
+            gc.collect()
+    except Exception:
+        pass
+
+_page_crash_guard()
+
 st.set_page_config(page_title="Debug ABSA", layout="wide")
 
 # Amankan halaman ini
