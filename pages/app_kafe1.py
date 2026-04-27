@@ -161,12 +161,24 @@ _identifier     = _login_google if _is_google else _login_username
 # ════════════════════════════════════════════════════════════════
 # LOAD DATA — via Google Sheets
 # ════════════════════════════════════════════════════════════════
-@st.cache_data(show_spinner=False)
+# SESUDAH — wrap load_data dengan timeout guard
+@st.cache_data(show_spinner=False, ttl=1800)
 def get_df():
-    df = load_data()
-    df["skor_sentimen"] = pd.to_numeric(df["skor_sentimen"], errors="coerce").fillna(0)
-    df["kafe_id"]       = df["kafe_id"].astype(str)
-    return df
+    try:
+        df = load_data()
+        df["skor_sentimen"] = pd.to_numeric(
+            df["skor_sentimen"], errors="coerce"
+        ).fillna(0)
+        df["kafe_id"] = df["kafe_id"].astype(str)
+        return df
+    except Exception as e:
+        # Return DataFrame kosong agar halaman tetap render
+        st.warning(f"⚠️ Gagal memuat data: {e}", icon="⚠️")
+        return pd.DataFrame(columns=[
+            "kafe_id", "nama_kafe", "alamat_kafe", "kecamatan_kafe",
+            "jam_buka", "cover", "skor_sentimen", "category_aspect_kafe",
+            "aspect_condition", "sentimen", "review_id",
+        ])
 
 df = get_df()
 
@@ -207,18 +219,31 @@ def get_reviewer_aktif_per_kafe(_dataframe: pd.DataFrame) -> dict:
         result[kid] = round((aktif / total) * 100, 1)
     return result
 
-# [P1] Guard precompute
-if "precompute_done_1" not in st.session_state:
-    with st.spinner("☕ Memuat data kafe..."):
-        _df_cache_key = (df.shape, hash(str(df.iloc[0].values.tolist()) if len(df) > 0 else "empty"))
-        best_df      = get_best_per_category(_df_cache_key[0], _df_cache_key[1])
-        _top5_lookup = precompute_all_top5(_df_cache_key[0], _df_cache_key[1])
-    st.session_state["precompute_done_1"]  = True
-    st.session_state["_cached_best_df_1"]  = best_df
-    st.session_state["_cached_top5_1"]     = _top5_lookup
-else:
-    best_df      = st.session_state["_cached_best_df_1"]
-    _top5_lookup = st.session_state["_cached_top5_1"]
+# [P1] Guard precompute — dengan try-except agar tidak stuck saat crash
+try:
+    if "precompute_done_1" not in st.session_state:
+        with st.spinner("☕ Memuat data kafe..."):
+            _df_cache_key = (
+                df.shape,
+                hash(str(df.iloc[0].values.tolist()) if len(df) > 0 else "empty")
+            )
+            best_df      = get_best_per_category(_df_cache_key[0], _df_cache_key[1])
+            _top5_lookup = precompute_all_top5(_df_cache_key[0], _df_cache_key[1])
+        st.session_state["precompute_done_1"] = True
+        st.session_state["_cached_best_df_1"] = best_df
+        st.session_state["_cached_top5_1"]    = _top5_lookup
+    else:
+        best_df      = st.session_state["_cached_best_df_1"]
+        _top5_lookup = st.session_state["_cached_top5_1"]
+
+except Exception as _precompute_err:
+    # Jika gagal, lanjutkan dengan data kosong
+    # Halaman tetap render, hanya slideshow yang kosong
+    best_df      = pd.DataFrame()
+    _top5_lookup = {}
+    st.session_state["precompute_done_1"] = True
+    st.session_state["_cached_best_df_1"] = best_df
+    st.session_state["_cached_top5_1"]    = _top5_lookup
 
 _jml_review_map     = get_jumlah_review_per_kafe(df)
 _reviewer_aktif_map = get_reviewer_aktif_per_kafe(df)
