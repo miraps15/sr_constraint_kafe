@@ -878,10 +878,18 @@ if not df_converted.empty:
         df_show = df_show.rename(columns=rename_map).reset_index(drop=True)
         df_show.index = df_show.index + 1
 
+        # ✅ Batasi tampilan maksimal 200 baris untuk hemat memory render
+        df_show_limited = df_show.head(200)
+        if len(df_show) > 200:
+            st.markdown(
+                f'<div style="font-size:.74rem;color:#B8730A;margin-bottom:4px;">'
+                f'⚡ Menampilkan 200 dari {len(df_show)} baris. Download Excel untuk data lengkap.</div>',
+                unsafe_allow_html=True
+            )
         st.dataframe(
-            df_show,
+            df_show_limited,
             use_container_width=True,
-            height=min(440, n_rows_conv * 38 + 60),
+            height=min(440, len(df_show_limited) * 38 + 60),
         )
         st.markdown(
             f'<div style="font-size:.72rem;color:#bbb;margin-top:4px;">'
