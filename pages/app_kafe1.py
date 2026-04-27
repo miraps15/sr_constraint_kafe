@@ -1058,7 +1058,7 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
     if not reviews:
         return {"raw_aspects": [], "df_converted": pd.DataFrame()}
 
-    seen_texts     = set()
+    seen_texts = set()
     unique_reviews = []
     for r in reviews:
         t = r.strip()
@@ -1075,6 +1075,22 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
     if cache_key in st.session_state:
         return st.session_state[cache_key]
 
+    # ✅ Cek memory sebelum mulai analisis berat
+    try:
+        import resource, platform
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        mem_mb = usage / 1024 if platform.system() != 'Darwin' else usage / (1024*1024)
+        if mem_mb > 400:
+            # Bersihkan cache tidak penting dulu
+            for k in ["_all_slides_html_guest", "_all_slides_html_loggedin",
+                      "_cached_best_df", "_cached_top5",
+                      "_cached_best_df_1", "_cached_top5_1"]:
+                if k in st.session_state:
+                    del st.session_state[k]
+            gc.collect()
+    except Exception:
+        pass
+
     if not st.session_state.get("_absa_warmed", False):
         with st.spinner("⏳ Memuat model analisis untuk pertama kali (~30-60 detik)..."):
             ok = _prewarm_absa_models()
@@ -1086,7 +1102,7 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
     device = torch.device('cpu')
 
     progress_bar = st.progress(0, text="🔄 Memulai analisis...")
-    status_text  = st.empty()
+    status_text = st.empty()
 
     all_aspects = []
     n = len(batch_reviews)
@@ -1114,6 +1130,15 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
             for asp in asp_list:
                 asp["_source_review"] = orig_rev
             all_aspects.extend(asp_list)
+        except MemoryError:
+            # ✅ Tangkap MemoryError secara eksplisit
+            progress_bar.empty()
+            status_text.empty()
+            gc.collect()
+            raise RuntimeError(
+                "Memori tidak cukup untuk menganalisis semua review. "
+                "Coba kurangi jumlah review (maksimal 5) atau reload halaman."
+            )
         except Exception as e:
             st.warning(f"Review {i+1} gagal dianalisis: {str(e)[:80]}")
 
@@ -1126,35 +1151,36 @@ def run_analysis_optimized(reviews: list, nama_kafe: str) -> dict:
     if not df_conv.empty:
         if "review" not in df_conv.columns:
             df_conv["review"] = [a.get("_source_review", "") for a in all_aspects]
-        
-        # Selalu hitung ulang skor_sentimen dari kolom sentimen prediksi model
-        # agar tidak bergantung pada df_konversi — positive=1, negative=0
         if "sentimen" in df_conv.columns:
             df_conv["skor_sentimen"] = df_conv["sentimen"].apply(
                 lambda x: 1.0 if str(x).lower() == "positive" else 0.0
             )
         elif "skor_sentimen" not in df_conv.columns:
             df_conv["skor_sentimen"] = 0.0
-    
-        # Alias skor untuk kompatibilitas hasilanalisis.py
         df_conv["skor"] = df_conv["skor_sentimen"].copy()
-    # ✅ PERBAIKAN: Paksa GC setelah analisis berat
-    import gc
+
     gc.collect()
 
     result = {
-        "raw_aspects"     : all_aspects,
-        "df_converted"    : df_conv,
+        "raw_aspects": all_aspects,
+        "df_converted": df_conv,
         "original_reviews": reviews,
-        "batch_reviews"   : batch_reviews,
-        "was_truncated"   : was_truncated,
-        "n_original"      : len(reviews),
-        "n_analyzed"      : len(batch_reviews),
-        "nama_kafe"       : nama_kafe,
-        "jumlah_review"   : len(reviews),
+        "batch_reviews": batch_reviews,
+        "was_truncated": was_truncated,
+        "n_original": len(reviews),
+        "n_analyzed": len(batch_reviews),
+        "nama_kafe": nama_kafe,
+        "jumlah_review": len(reviews),
     }
 
-    st.session_state[cache_key] = result
+    # ✅ Simpan cache tapi batasi ukuran session state
+    _session_size = sum(
+        sys.getsizeof(str(v)) for v in st.session_state.values()
+        if not isinstance(v, (pd.DataFrame,))
+    )
+    if _session_size < 5_000_000:  # < 5MB
+        st.session_state[cache_key] = result
+
     return result
 
 # ════════════════════════════════════════════════════════════════
@@ -1259,24 +1285,44 @@ def _render_analisis_section():
                 st.session_state["_nav_to_analisis"]    = True
                 st.rerun(scope="fragment")
 
-            if st.session_state.get("_nav_to_analisis", False) and st.session_state.get("analisis_processing", False):
+            if st.session_state.get("_nav_to_analisis", False) and \
+               st.session_state.get("analisis_processing", False):
                 st.session_state.pop("_nav_to_analisis", None)
                 try:
                     result = run_analysis_optimized(
                         st.session_state.get("_pending_reviews", []),
                         st.session_state.get("_pending_nama", "")
                     )
-                    st.session_state["analisis_result"]     = result
+                    st.session_state["analisis_result"] = result
                     st.session_state["analisis_processing"] = False
                     st.switch_page("pages/hasilanalisis.py")
+                except MemoryError:
+                    st.session_state["analisis_processing"] = False
+                    # Bersihkan cache berat
+                    for k in ["_all_slides_html_guest", "_all_slides_html_loggedin",
+                              "_cached_best_df", "_cached_top5",
+                              "_cached_best_df_1", "_cached_top5_1"]:
+                        if k in st.session_state:
+                            del st.session_state[k]
+                    gc.collect()
+                    st.session_state["analisis_error"] = (
+                        "Memori penuh. Kurangi jumlah review (maks 3-5) dan coba lagi."
+                    )
+                    st.rerun(scope="fragment")
                 except Exception as e_proc:
                     st.session_state["analisis_processing"] = False
+                    gc.collect()
                     err_msg = str(e_proc)
                     if "No module named" in err_msg:
                         err_msg = "Modul analisis tidak ditemukan."
+                    elif "memory" in err_msg.lower() or "oom" in err_msg.lower():
+                        err_msg = "Memori tidak cukup. Kurangi review dan coba lagi."
+                        for k in ["_all_slides_html_guest", "_all_slides_html_loggedin"]:
+                            if k in st.session_state:
+                                del st.session_state[k]
                     st.session_state["analisis_error"] = err_msg[:400]
                     st.rerun(scope="fragment")
-
+                    
 _render_analisis_section()
 
 # ════════════════════════════════════════════════════════════════
