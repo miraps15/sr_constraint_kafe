@@ -32,8 +32,33 @@ from users_manager import (
 )
 
 # ── Query param navigation ────────────────────────────────────
+# SESUDAH — tambah crash detection sebelum navigate:
+import gc as _gc
+
 _qp = st.query_params
-if _qp.get("nav_kid", "") and _qp.get("nav_nama", ""):
+
+# ✅ CRASH RECOVERY: Bersihkan state berat saat pertama load
+if not st.session_state.get("_app_initialized", False):
+    # Ini adalah fresh load atau reload setelah crash
+    heavy_keys = [
+        "_all_slides_html_guest", "_all_slides_html_loggedin",
+        "_cached_best_df", "_cached_top5",
+        "_cached_best_df_1", "_cached_top5_1",
+        "analisis_result", "_pending_reviews",
+        "analisis_processing", "_nav_to_analisis",
+        "_absa_warmed",  # Force re-init model setelah crash
+    ]
+    for _k in heavy_keys:
+        if _k in st.session_state:
+            del st.session_state[_k]
+    _gc.collect()
+    st.session_state["_app_initialized"] = True
+
+# ✅ Hanya navigate jika BUKAN fresh reload (ada session aktif)
+_has_active_session = st.session_state.get("logged_in", False) or \
+                      st.session_state.get("_user_interacted", False)
+
+if _qp.get("nav_kid", "") and _qp.get("nav_nama", "") and _has_active_session:
     _kid  = _qp.get("nav_kid", "")
     _nama = _qp.get("nav_nama", "")
     _cat  = _qp.get("nav_cat", "")
@@ -44,43 +69,9 @@ if _qp.get("nav_kid", "") and _qp.get("nav_nama", ""):
     st.session_state["detail_cat_chosen"] = _cat
     st.session_state["_prev_page"] = "app_kafe.py"
     st.switch_page("pages/skemacari1.py")
-
-# ── CRASH RECOVERY: Deteksi reload setelah crash ─────────────
-import gc
-import sys
-
-def _handle_crash_recovery():
-    """
-    Jika app direload setelah crash, bersihkan state berat
-    agar tidak langsung crash lagi.
-    Ini dijalankan SEBELUM apapun di halaman utama.
-    """
-    # Tandai bahwa app_kafe.py berhasil dimuat
-    _crash_count = st.session_state.get("_crash_count", 0)
-    
-    # Jika ada flag crash dari halaman lain, bersihkan state
-    if st.session_state.get("_came_from_crash", False):
-        st.session_state["_came_from_crash"] = False
-        # Clear semua cache berat
-        heavy_keys = [
-            "_cached_best_df", "_cached_top5", "_cached_best_df_1",
-            "_cached_top5_1", "_all_slides_html_guest",
-            "_all_slides_html_loggedin", "analisis_result",
-            "_pending_reviews", "_cached_saw_cat", "_cached_overall",
-            "_cached_reviewer_pct", "precompute_done_1",
-        ]
-        for key in heavy_keys:
-            if key in st.session_state:
-                del st.session_state[key]
-        gc.collect()
-    
-    # Reset navigation state yang mungkin tertinggal
-    for nav_key in ["detail_kid", "detail_nama", "_nav_to_detail",
-                    "_go_back", "analisis_processing"]:
-        if nav_key in st.session_state:
-            del st.session_state[nav_key]
-
-_handle_crash_recovery()
+elif _qp.get("nav_kid", ""):
+    # Ada nav params tapi session hilang (setelah crash) → clear params saja
+    st.query_params.clear()
 # ─────────────────────────────────────────────────────────────
 
 st.set_page_config(
