@@ -1041,4 +1041,4 @@ _render_login_section()
 # ════════════════════════════════════════════════════════════════
 # FOOTER
 # ════════════════════════════════════════════════════════════════
-st.markdown('<div class="footer">&copy; 2025 &nbsp;<b>KafeSby</b>&nbsp;&middot; Rekomendasi Kafe Surabaya Berbasis Review Pengunjun
+st.markdown('<div class="footer">&copy; 2025 &nbsp;<b>KafeSby</b>&nbsp;&middot; Rekomendasi Kafe Surabaya Berbasis Review Pengunjung</div>', unsafe_allow_html=True)
