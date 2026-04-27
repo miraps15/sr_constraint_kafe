@@ -982,6 +982,9 @@ if not best_df.empty and not _any_popup_active and not _pref_active:
     _all_html = st.session_state[_slides_key]
     if _all_html:
         st.markdown(_all_html, unsafe_allow_html=True)
+        # ✅ Hapus dari session_state setelah render untuk hemat memory
+        if len(_all_html) > 500_000:
+            del st.session_state[_slides_key]
 
 elif _pref_active and not _any_popup_active:
     st.markdown("""
