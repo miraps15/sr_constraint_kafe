@@ -93,13 +93,6 @@ st.markdown("""
 # ════════════════════════════════════════════════════════════════
 # LOAD DATA
 # ════════════════════════════════════════════════════════════════
-@st.cache_data(show_spinner=False, ttl=1800)
-def get_df():
-    df = load_data()
-    df["skor_sentimen"] = pd.to_numeric(df["skor_sentimen"], errors="coerce").fillna(0)
-    df["kafe_id"]       = df["kafe_id"].astype(str)
-    return df
-
 # ── Load data ringan dulu ──────────────────────────────────────
 @st.cache_data(show_spinner=False, ttl=1800)
 def get_df():
@@ -149,7 +142,7 @@ else:
     cat_cond_map = nama_to_kafeid = kecamatan_to_kafeid = {}
     nama_set = kecamatan_set = cond_set = set()
 
-# ── Precompute LAZY — hanya jika user sudah scroll ke sana ────
+# ── Precompute LAZY ────────────────────────────────────────────
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_best_per_category(_df_shape, _df_hash):
     try:
@@ -164,17 +157,9 @@ def precompute_all_top5(_df_shape, _df_hash):
     except Exception:
         return {}
 
-# ── Jangan precompute di sini! Pindah ke dalam render section ─
-best_df      = pd.DataFrame()   # default kosong
+# Default kosong — akan diisi lazy di section Best Kafe
+best_df      = pd.DataFrame()
 _top5_lookup = {}
-
-except Exception as _e:
-    # Jika precompute gagal, lanjutkan dengan data kosong
-    # Halaman tetap tampil, hanya bagian slideshow yang kosong
-    best_df      = pd.DataFrame()
-    _top5_lookup = {}
-    st.session_state["_cached_best_df"] = best_df
-    st.session_state["_cached_top5"]    = _top5_lookup
 
 if "_cached_reviewer_pct" not in st.session_state:
     st.session_state["_cached_reviewer_pct"] = get_reviewer_aktif_pct_per_kafe(df)
@@ -232,26 +217,6 @@ def suggest_remove_aspect(pref_items: list, lokasi: str) -> list:
 # ════════════════════════════════════════════════════════════════
 # LOOKUP TABLES
 # ════════════════════════════════════════════════════════════════
-all_nama             = sorted(df["nama_kafe"].dropna().unique().tolist())
-all_kecamatan_search = sorted(df["kecamatan_kafe"].dropna().unique().tolist()) \
-                       if "kecamatan_kafe" in df.columns else []
-all_condition        = sorted(df["aspect_condition"].dropna().unique().tolist())
-unique_cats          = sorted(df["category_aspect_kafe"].dropna().unique().tolist())
-all_kecamatan        = all_kecamatan_search
-
-cat_cond_map     = {cat: sorted(df[df["category_aspect_kafe"]==cat]["aspect_condition"]
-                                 .dropna().unique().tolist()) for cat in unique_cats}
-nama_to_kafeid   = df.drop_duplicates("nama_kafe").set_index("nama_kafe")["kafe_id"].to_dict()
-
-kecamatan_to_kafeid = {}
-if "kecamatan_kafe" in df.columns:
-    for kec in all_kecamatan_search:
-        kecamatan_to_kafeid[kec] = df[df["kecamatan_kafe"] == kec]["kafe_id"].unique().tolist()
-
-nama_set      = set(all_nama)
-kecamatan_set = set(all_kecamatan_search)
-cond_set      = set(all_condition)
-
 if "_cond_cache_ready" not in st.session_state:
     _all_cond_cache = {c: get_kafe_per_condition(c) for c in all_condition}
     st.session_state["_cond_cache_ready"] = True
