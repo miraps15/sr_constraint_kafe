@@ -67,6 +67,29 @@ st.set_page_config(
 import os
 _IS_HEALTH_CHECK = os.environ.get("STREAMLIT_HEALTH_CHECK", "") == "true"
 
+# ✅ ANTI-STUCK: Inject JS redirect cleaner di setiap load app_kafe.py
+# Ini memastikan URL bersih dari query params berbahaya
+st.markdown("""
+<script>
+(function() {
+    // Bersihkan query params berbahaya dari URL tanpa reload
+    var url = new URL(window.location.href);
+    var dangerous = ['nav_kid', 'nav_nama', 'nav_cat', 'kid', 'nama', 
+                     'source', 'cond', 'user', 'is_google'];
+    var hadDangerous = false;
+    dangerous.forEach(function(p) {
+        if (url.searchParams.has(p)) {
+            url.searchParams.delete(p);
+            hadDangerous = true;
+        }
+    });
+    if (hadDangerous) {
+        window.history.replaceState({}, '', url.pathname);
+    }
+})();
+</script>
+""", unsafe_allow_html=True)
+
 # ════════════════════════════════════════════════════════════════
 # LOAD DATA
 # ════════════════════════════════════════════════════════════════
