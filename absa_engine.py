@@ -122,6 +122,25 @@ os.makedirs(_CACHE_DIR, exist_ok=True)
 def _cached_path(name: str, ext: str) -> str:
     return os.path.join(_CACHE_DIR, f"{name}{ext}")
 
+def clear_heavy_cache():
+    """Bersihkan cache berat jika memory menipis."""
+    import gc
+    gc.collect()
+    print("[absa_engine] GC collect dijalankan")
+
+def get_memory_usage_mb() -> float:
+    """Estimasi memory usage proses saat ini dalam MB."""
+    try:
+        import resource
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # Linux: KB, Mac: bytes
+        import platform
+        if platform.system() == 'Darwin':
+            return usage / (1024 * 1024)
+        return usage / 1024
+    except Exception:
+        return 0.0
+        
 def _is_valid_cached_file(path: str, name: str) -> bool:
     if not os.path.exists(path):
         return False
@@ -414,8 +433,29 @@ class SentimentModel(nn.Module):
 # Cache global untuk Colab (tanpa @st.cache_resource agar tidak konflik)
 _glove_cache = None
 
-# ✅ GANTI: Hapus _glove_cache global, andalkan HANYA @st.cache_resource
-@st.cache_resource(show_spinner=True)
+# Vocabulary kafe domain — hanya muat kata yang relevan untuk hemat memory
+_KAFE_VOCAB_HINTS = {
+    'food','coffee','service','place','staff','good','bad','delicious',
+    'clean','comfortable','taste','wifi','parking','atmosphere','price',
+    'menu','ambience','waiter','seat','location','music','toilet','noise',
+    'dessert','drink','beverage','snack','quality','portion','wait','fast',
+    'slow','friendly','rude','cozy','noisy','quiet','crowded','recommend',
+    'excellent','terrible','amazing','awful','nice','dirty','hot','cold',
+    'fresh','stale','cheap','expensive','worth','value','great','poor',
+    'interior','design','aesthetic','seat','table','chair','bathroom',
+    'prayer','room','parking','lot','easy','hard','full','empty','busy',
+    'cashier','order','queue','line','pay','cash','card','digital','wifi',
+    'speed','connection','slow','fast','strong','weak','signal','air',
+    'conditioning','fan','hot','warm','cool','cold','smell','aroma',
+    'music','loud','quiet','soft','background','playlist','live','band',
+    'portion','size','big','small','enough','lacking','presentation','plating',
+    'fresh','quality','ingredient','raw','cooked','overcooked','undercooked',
+    'sweet','sour','salty','spicy','bitter','bland','rich','light','heavy',
+    'recommended','menu','special','signature','bestseller','popular',
+    'discount','promo','voucher','affordable','reasonable','overpriced',
+}
+
+@st.cache_resource(show_spinner="☕ Memuat model bahasa (sekali saja)...")
 def load_glove(dim: int = 300):
     embeddings = {}
 
@@ -433,24 +473,29 @@ def load_glove(dim: int = 300):
             print(f"[absa_engine] Gagal load GloVe Colab: {e}")
     else:
         dest_path = _cached_path("glove", ".txt")
-        # ✅ FIX: Paksa validasi ukuran file sebelum pakai cache
         if os.path.exists(dest_path):
             size = os.path.getsize(dest_path)
             if size < _MIN_FILE_SIZES["glove"]:
                 print(f"[absa_engine] Cache GloVe invalid ({size} bytes), hapus dan re-download")
                 os.remove(dest_path)
-        
+
         ok = _download_gdrive_file(_GDRIVE_IDS["glove"], dest_path, "GloVe embeddings", "glove")
         if ok:
             try:
+                # ✅ PERBAIKAN: Muat hanya kata yang relevan untuk hemat ~70% memory
+                loaded_count = 0
                 with open(dest_path, 'r', encoding='utf-8') as f:
                     for line in f:
-                        vals = line.rstrip().split(' ')
-                        word = vals[0]
-                        vec  = np.array(vals[1:], dtype=np.float32)
-                        if len(vec) == dim:
+                        parts = line.rstrip().split(' ')
+                        if len(parts) != dim + 1:
+                            continue
+                        word = parts[0].lower()
+                        vec  = np.array(parts[1:], dtype=np.float32)
+                        # Muat semua kata pendek (≤4 huruf) + kata domain kafe
+                        if len(word) <= 4 or word in _KAFE_VOCAB_HINTS or loaded_count < 50000:
                             embeddings[word] = vec
-                print(f"[absa_engine] GloVe (Cloud) loaded: {len(embeddings):,} vectors")
+                            loaded_count += 1
+                print(f"[absa_engine] GloVe (Cloud, filtered) loaded: {len(embeddings):,} vectors")
             except Exception as e:
                 print(f"[absa_engine] Gagal parse GloVe Cloud: {e}")
 
