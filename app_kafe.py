@@ -91,8 +91,8 @@ if "_cached_best_df" not in st.session_state:
         _df_cache_key = (df.shape, hash(str(df.iloc[0].values.tolist()) if len(df) > 0 else "empty"))
         best_df      = get_best_per_category(_df_cache_key[0], _df_cache_key[1])
         _top5_lookup = precompute_all_top5(_df_cache_key[0], _df_cache_key[1])
-    st.session_state["_cached_best_df"] = _best
-    st.session_state["_cached_top5"]    = _top5
+    st.session_state["_cached_best_df"] = best_df
+    st.session_state["_cached_top5"]    = _top5_lookup
 
 best_df      = st.session_state["_cached_best_df"]
 _top5_lookup = st.session_state["_cached_top5"]
