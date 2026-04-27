@@ -4,21 +4,14 @@ enableCORS = false
 enableXsrfProtection = false
 maxUploadSize = 10
 maxMessageSize = 200
-
 [client]
 showErrorDetails = false
-toolbarMode = "minimal"
-
 [runner]
 magicEnabled = false
 fastReruns = true
 enforceSerializableSessionState = false
-installTracer = false
-fixMatplotlib = false
-
 [browser]
 gatherUsageStats = false
-
 [theme]
 base = "light"
 primaryColor = "#C8502A"
