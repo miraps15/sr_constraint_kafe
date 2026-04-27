@@ -141,13 +141,14 @@ def get_df():
 
 df = get_df()
 
-@st.cache_data(show_spinner=False)
-def get_best_per_category(_dataframe: pd.DataFrame) -> pd.DataFrame:
-    return compute_best_per_category_imdb(_dataframe)
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_best_per_category(_df_shape: tuple, _df_hash: int) -> pd.DataFrame:
+    # ✅ Gunakan shape+hash sebagai cache key, bukan DataFrame langsung
+    return compute_best_per_category_imdb(df)
 
-@st.cache_data(show_spinner=False)
-def precompute_all_top5(_dataframe: pd.DataFrame) -> dict:
-    return precompute_top5_conditions_imdb(_dataframe)
+@st.cache_data(show_spinner=False, ttl=3600)
+def precompute_all_top5(_df_shape: tuple, _df_hash: int) -> dict:
+    return precompute_top5_conditions_imdb(df)
 
 @st.cache_data(show_spinner=False)
 def get_kafe_per_condition(cond: str) -> set:
@@ -180,8 +181,9 @@ def get_reviewer_aktif_per_kafe(_dataframe: pd.DataFrame) -> dict:
 # [P1] Guard precompute
 if "precompute_done_1" not in st.session_state:
     with st.spinner("☕ Memuat data kafe..."):
-        best_df      = get_best_per_category(df)
-        _top5_lookup = precompute_all_top5(df)
+        _df_cache_key = (df.shape, hash(str(df.iloc[0].values.tolist()) if len(df) > 0 else "empty"))
+        best_df      = get_best_per_category(_df_cache_key[0], _df_cache_key[1])
+        _top5_lookup = precompute_all_top5(_df_cache_key[0], _df_cache_key[1])
     st.session_state["precompute_done_1"]  = True
     st.session_state["_cached_best_df_1"]  = best_df
     st.session_state["_cached_top5_1"]     = _top5_lookup
