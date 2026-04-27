@@ -45,6 +45,44 @@ if _qp.get("nav_kid", "") and _qp.get("nav_nama", ""):
     st.session_state["_prev_page"] = "app_kafe.py"
     st.switch_page("pages/skemacari1.py")
 
+# ── CRASH RECOVERY: Deteksi reload setelah crash ─────────────
+import gc
+import sys
+
+def _handle_crash_recovery():
+    """
+    Jika app direload setelah crash, bersihkan state berat
+    agar tidak langsung crash lagi.
+    Ini dijalankan SEBELUM apapun di halaman utama.
+    """
+    # Tandai bahwa app_kafe.py berhasil dimuat
+    _crash_count = st.session_state.get("_crash_count", 0)
+    
+    # Jika ada flag crash dari halaman lain, bersihkan state
+    if st.session_state.get("_came_from_crash", False):
+        st.session_state["_came_from_crash"] = False
+        # Clear semua cache berat
+        heavy_keys = [
+            "_cached_best_df", "_cached_top5", "_cached_best_df_1",
+            "_cached_top5_1", "_all_slides_html_guest",
+            "_all_slides_html_loggedin", "analisis_result",
+            "_pending_reviews", "_cached_saw_cat", "_cached_overall",
+            "_cached_reviewer_pct", "precompute_done_1",
+        ]
+        for key in heavy_keys:
+            if key in st.session_state:
+                del st.session_state[key]
+        gc.collect()
+    
+    # Reset navigation state yang mungkin tertinggal
+    for nav_key in ["detail_kid", "detail_nama", "_nav_to_detail",
+                    "_go_back", "analisis_processing"]:
+        if nav_key in st.session_state:
+            del st.session_state[nav_key]
+
+_handle_crash_recovery()
+# ─────────────────────────────────────────────────────────────
+
 st.set_page_config(
     page_title="Rekomendasi Kafe Surabaya",
     page_icon="☕", layout="wide",
