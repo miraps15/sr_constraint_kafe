@@ -32,53 +32,38 @@ from users_manager import (
 )
 
 # ── Query param navigation ────────────────────────────────────
-# SESUDAH — tambah crash detection sebelum navigate:
 import gc as _gc
 
 _qp = st.query_params
 
-# ✅ CRASH RECOVERY: Bersihkan state berat saat pertama load
-if not st.session_state.get("_app_initialized", False):
-    # Ini adalah fresh load atau reload setelah crash
-    heavy_keys = [
-        "_all_slides_html_guest", "_all_slides_html_loggedin",
-        "_cached_best_df", "_cached_top5",
-        "_cached_best_df_1", "_cached_top5_1",
-        "analisis_result", "_pending_reviews",
-        "analisis_processing", "_nav_to_analisis",
-        "_absa_warmed",  # Force re-init model setelah crash
-    ]
-    for _k in heavy_keys:
-        if _k in st.session_state:
-            del st.session_state[_k]
-    _gc.collect()
-    st.session_state["_app_initialized"] = True
-
-# ✅ Hanya navigate jika BUKAN fresh reload (ada session aktif)
-_has_active_session = st.session_state.get("logged_in", False) or \
-                      st.session_state.get("_user_interacted", False)
-
-if _qp.get("nav_kid", "") and _qp.get("nav_nama", "") and _has_active_session:
-    _kid  = _qp.get("nav_kid", "")
-    _nama = _qp.get("nav_nama", "")
-    _cat  = _qp.get("nav_cat", "")
-    st.query_params.clear()
-    st.session_state["detail_kid"]        = _kid
-    st.session_state["detail_nama"]       = _nama
-    st.session_state["detail_source"]     = "kasus_e"
-    st.session_state["detail_cat_chosen"] = _cat
-    st.session_state["_prev_page"] = "app_kafe.py"
-    st.switch_page("pages/skemacari1.py")
-elif _qp.get("nav_kid", ""):
-    # Ada nav params tapi session hilang (setelah crash) → clear params saja
-    st.query_params.clear()
-# ─────────────────────────────────────────────────────────────
+# ✅ CRASH RECOVERY: Cukup clear query params berbahaya saja
+# Jangan lakukan operasi berat di sini
+if _qp.get("nav_kid", "") or _qp.get("nav_nama", ""):
+    _has_session = bool(
+        st.session_state.get("logged_in") or
+        st.session_state.get("_user_interacted")
+    )
+    if _has_session:
+        _kid  = _qp.get("nav_kid", "")
+        _nama = _qp.get("nav_nama", "")
+        _cat  = _qp.get("nav_cat", "")
+        st.query_params.clear()
+        st.session_state["detail_kid"]        = _kid
+        st.session_state["detail_nama"]       = _nama
+        st.session_state["detail_source"]     = "kasus_e"
+        st.session_state["detail_cat_chosen"] = _cat
+        st.session_state["_prev_page"]        = "app_kafe.py"
+        st.switch_page("pages/skemacari1.py")
+    else:
+        # Session hilang (setelah crash) → buang query params, tampilkan home
+        st.query_params.clear()
 
 st.set_page_config(
     page_title="Rekomendasi Kafe Surabaya",
     page_icon="☕", layout="wide",
     initial_sidebar_state="collapsed",
 )
+
 import os
 _IS_HEALTH_CHECK = os.environ.get("STREAMLIT_HEALTH_CHECK", "") == "true"
 
@@ -115,16 +100,29 @@ def get_best_per_category(_df_shape: tuple, _df_hash: int) -> pd.DataFrame:
 def precompute_all_top5(_df_shape: tuple, _df_hash: int) -> dict:
     return precompute_top5_conditions_imdb(df)
 
-if "_cached_best_df" not in st.session_state:
-    with st.spinner("☕ Memuat data kafe..."):
-        _df_cache_key = (df.shape, hash(str(df.iloc[0].values.tolist()) if len(df) > 0 else "empty"))
-        best_df      = get_best_per_category(_df_cache_key[0], _df_cache_key[1])
-        _top5_lookup = precompute_all_top5(_df_cache_key[0], _df_cache_key[1])
+# SESUDAH — gunakan try-except agar tidak stuck
+try:
+    if "_cached_best_df" not in st.session_state:
+        with st.spinner("☕ Memuat data kafe..."):
+            _df_cache_key = (
+                df.shape,
+                hash(str(df.iloc[0].values.tolist()) if len(df) > 0 else "empty")
+            )
+            best_df      = get_best_per_category(_df_cache_key[0], _df_cache_key[1])
+            _top5_lookup = precompute_all_top5(_df_cache_key[0], _df_cache_key[1])
+        st.session_state["_cached_best_df"] = best_df
+        st.session_state["_cached_top5"]    = _top5_lookup
+
+    best_df      = st.session_state["_cached_best_df"]
+    _top5_lookup = st.session_state["_cached_top5"]
+
+except Exception as _e:
+    # Jika precompute gagal, lanjutkan dengan data kosong
+    # Halaman tetap tampil, hanya bagian slideshow yang kosong
+    best_df      = pd.DataFrame()
+    _top5_lookup = {}
     st.session_state["_cached_best_df"] = best_df
     st.session_state["_cached_top5"]    = _top5_lookup
-
-best_df      = st.session_state["_cached_best_df"]
-_top5_lookup = st.session_state["_cached_top5"]
 
 if "_cached_reviewer_pct" not in st.session_state:
     st.session_state["_cached_reviewer_pct"] = get_reviewer_aktif_pct_per_kafe(df)
