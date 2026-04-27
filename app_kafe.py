@@ -552,6 +552,7 @@ with st.container():
 def navigate_from_query(q: str):
     if not q or q.strip() == "":
         return
+    st.session_state["_user_interacted"] = True  # ✅ Tambahkan baris ini saja
     q = q.strip()
     if q in nama_set:
         st.session_state.update({"detail_kid": nama_to_kafeid.get(q, ""), "detail_nama": q})
